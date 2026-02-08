@@ -20,7 +20,7 @@ pub fn generate_count_batch(
     count: usize,
     rng: &mut impl Rng,
 ) -> (Vec<String>, usize) {
-    let limit = count.min(2);
+    let limit = count.min(100);
     let mut stream = Vec::new();
 
     let raw_words = source.get_unique_batch(limit, rng);
