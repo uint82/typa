@@ -70,6 +70,9 @@ pub struct App {
     pub show_ui: bool,
 
     pub quote_data: QuoteData,
+    pub quote_pool: Vec<String>,
+    pub total_quote_words: usize,
+
     pub theme: Theme,
 
     pub use_numbers: bool,
@@ -173,6 +176,8 @@ impl App {
             display_mask: Vec::new(),
             terminal_width: 80,
             visual_lines: Vec::new(),
+            quote_pool: Vec::new(),
+            total_quote_words: 0,
             word_data,
             quote_data,
         };
@@ -216,6 +221,8 @@ impl App {
         self.current_quote_source.clear();
         self.show_ui = true;
 
+        self.quote_pool.clear();
+        self.total_quote_words = 0;
         self.generate_initial_words();
     }
 
@@ -772,13 +779,27 @@ impl App {
                         valid.choose(&mut rng).copied()
                     }
                 };
+
                 if let Some(q) = q_opt {
                     let clean_text = strings::clean_typography_symbols(&q.text);
-                    self.word_stream = clean_text.split_whitespace().map(String::from).collect();
+                    let all_words: Vec<String> = clean_text.split_whitespace().map(String::from).collect();
+
+                    self.total_quote_words = all_words.len();
                     self.current_quote_source = q.source.clone();
+
+                    if all_words.len() > 100 {
+                        self.word_stream = all_words[..100].to_vec();
+                        let mut pool = all_words[100..].to_vec();
+                        pool.reverse();
+                        self.quote_pool = pool;
+                    } else {
+                        self.word_stream = all_words;
+                        self.quote_pool = Vec::new();
+                    }
                 } else {
-                    self.word_stream =
-                        vec!["No".to_string(), "Quote".to_string(), "Found".to_string()];
+                    self.word_stream = vec!["No".to_string(), "Quote".to_string(), "Found".to_string()];
+                    self.total_quote_words = 3;
+                    self.quote_pool = Vec::new();
                 }
             }
         }
@@ -821,6 +842,12 @@ impl App {
                 self.word_stream.extend(new_words);
                 self.update_stream_string();
             }
+            Mode::Quote(_) => {
+                if let Some(next_word) = self.quote_pool.pop() {
+                    self.word_stream.push(next_word);
+                    self.update_stream_string();
+                }
+            }
             Mode::Words(target) => {
                 if self.generated_count < target {
                     let mut new_words = self.generate_smart_word(&mut rng);
@@ -849,7 +876,6 @@ impl App {
                     self.update_stream_string();
                 }
             }
-            _ => {}
         }
     }
 

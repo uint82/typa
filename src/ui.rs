@@ -229,15 +229,13 @@ fn draw_test(f: &mut Frame, app: &App) {
             format!("{}/{}", total_typed, total)
         }
         Mode::Quote(_) => {
-            let visible_typed_words = app.input.split_whitespace().count();
-            let mut typed_words = app.scrolled_word_count + visible_typed_words;
-            let is_finished = app.input.len() >= app.word_stream_string.len();
-            if !app.input.ends_with(' ') && !is_finished && visible_typed_words > 0 {
-                typed_words -= 1;
+            let visible_words = app.input.split_whitespace().count();
+            let mut typed_words = app.scrolled_word_count + visible_words;
+            let is_finished = app.input.len() >= app.word_stream_string.len() && app.quote_pool.is_empty();
+            if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
+                typed_words = typed_words.saturating_sub(1);
             }
-            let total_words = app.scrolled_word_count + app.word_stream_string.split_whitespace().count();
-
-            format!("{}/{}", typed_words, total_words)
+            format!("{}/{}", typed_words, app.total_quote_words)
         }
     };
 
