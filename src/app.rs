@@ -1,67 +1,19 @@
 use crate::config::Theme;
+use crate::models::{
+    AppState, Mode, QuoteData, QuoteEntry, QuoteLength, QuoteSelector, WordData,
+};
 use crate::utils::strings;
 use anyhow::{Context, Result};
 use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rust_embed::RustEmbed;
-use serde::Deserialize;
 use std::time::Instant;
 use textwrap::Options;
 
 #[derive(RustEmbed)]
 #[folder = "resources/"]
 struct Asset;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum QuoteLength {
-    Short,
-    Medium,
-    Long,
-    VeryLong,
-    All,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum QuoteSelector {
-    Category(QuoteLength),
-    Id(usize),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Mode {
-    Time(u64),
-    Words(usize),
-    Quote(QuoteSelector),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum AppState {
-    Waiting,
-    Running,
-    Finished,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct QuoteEntry {
-    pub text: String,
-    pub source: String,
-    pub length: usize,
-    pub id: usize,
-}
-#[derive(Debug, Deserialize, Clone)]
-pub struct QuoteData {
-    #[allow(dead_code)]
-    pub language: String,
-    pub groups: Vec<Vec<usize>>,
-    pub quotes: Vec<QuoteEntry>,
-}
-#[derive(Debug, Deserialize, Clone)]
-pub struct WordData {
-    #[allow(dead_code)]
-    pub name: String,
-    pub words: Vec<String>,
-}
 
 pub struct App {
     pub should_quit: bool,
@@ -104,9 +56,7 @@ pub struct App {
 
     pub terminal_width: u16,
     pub visual_lines: Vec<String>,
-    // the text currently displayed on screen (includes extra "ghost" chars)
     pub display_string: String,
-    // maps 1:1 to display_string. true if the char is an "extra" inserted error.
     pub display_mask: Vec<bool>,
 
     pub word_data: WordData,
@@ -143,33 +93,26 @@ impl App {
             state: AppState::Waiting,
             mode,
             show_ui: true,
-
             theme,
-
             use_numbers,
             use_punctuation,
-
             input: String::new(),
             cursor_idx: 0,
             start_time: None,
-
             gross_char_count: 0,
             total_errors_ever: 0,
             generated_count: 0,
             scrolled_word_count: 0,
-
             st_correct: 0,
             st_incorrect: 0,
             st_extra: 0,
             st_missed: 0,
             uncorrected_errors_scrolled: 0,
-
             final_wpm: 0.0,
             final_raw_wpm: 0.0,
             final_accuracy: 0.0,
             final_time: 0.0,
             current_quote_source: String::new(),
-
             word_stream: Vec::new(),
             word_stream_string: String::new(),
             display_string: String::new(),
@@ -254,8 +197,6 @@ impl App {
         let gross_wpm = (self.gross_char_count as f64 / 5.0) / duration_min;
         self.final_raw_wpm = gross_wpm;
 
-        // calculate current screen errors + scrolled errors for WPM
-        // use the display_mask based counting now for higher accuracy
         let mut screen_incorrect = 0;
         let mut screen_missed = 0;
         let mut screen_extra = 0;
@@ -310,7 +251,6 @@ impl App {
             let target_word = &self.word_stream[word_idx];
             let user_current_word = current_input_segments.last().unwrap_or(&"");
 
-            // max 19 extra chars
             let limit = target_word.len() + 19;
             if user_current_word.len() >= limit {
                 if c != ' ' {
@@ -318,7 +258,6 @@ impl App {
                 }
             }
 
-            // don't allow non-space chars to force a line wrap
             if c != ' ' {
                 if self.will_cause_visual_wrap(c) {
                     return;
@@ -326,7 +265,6 @@ impl App {
             }
 
             if c == ' ' {
-                // require at least 1 char typed before spacebar is allowed
                 if user_current_word.is_empty() {
                     return;
                 }
@@ -334,7 +272,7 @@ impl App {
                 if user_current_word.len() < target_word.len() {
                     let missing_count = target_word.len() - user_current_word.len();
                     for _ in 0..missing_count {
-                        self.input.push('\0'); // marker for missed chars
+                        self.input.push('\0');
                         self.total_errors_ever += 1;
                         self.cursor_idx += 1;
                     }
@@ -356,7 +294,6 @@ impl App {
         }
 
         self.input.push(c);
-
         self.cursor_idx += 1;
         self.sync_display_text();
 
@@ -380,7 +317,6 @@ impl App {
             return;
         }
 
-        // prevent backspace over a perfectly typed word.
         if self.input.ends_with(' ') {
             let segments: Vec<&str> = self.input.split(' ').collect();
             if segments.len() >= 2 {
@@ -397,8 +333,6 @@ impl App {
         if let Some(popped_char) = self.input.pop() {
             self.cursor_idx = self.cursor_idx.saturating_sub(1);
 
-            // if we deleted a space (' ') OR a ghost char ('\0'), check if there are
-            // more ghost chars immediately behind it. if so, delete them all.
             if popped_char == ' ' || popped_char == '\0' {
                 while self.input.ends_with('\0') {
                     self.input.pop();
@@ -751,7 +685,6 @@ impl App {
                 }
             }
             Mode::Words(count) => {
-                // cap initial size at 100 to prevent lag
                 let limit = (*count).min(100);
                 let words = self.generate_unique_batch(limit, &mut rng);
                 self.generated_count = words.len();
@@ -782,7 +715,8 @@ impl App {
 
                 if let Some(q) = q_opt {
                     let clean_text = strings::clean_typography_symbols(&q.text);
-                    let all_words: Vec<String> = clean_text.split_whitespace().map(String::from).collect();
+                    let all_words: Vec<String> =
+                        clean_text.split_whitespace().map(String::from).collect();
 
                     self.total_quote_words = all_words.len();
                     self.current_quote_source = q.source.clone();
@@ -797,7 +731,8 @@ impl App {
                         self.quote_pool = Vec::new();
                     }
                 } else {
-                    self.word_stream = vec!["No".to_string(), "Quote".to_string(), "Found".to_string()];
+                    self.word_stream =
+                        vec!["No".to_string(), "Quote".to_string(), "Found".to_string()];
                     self.total_quote_words = 3;
                     self.quote_pool = Vec::new();
                 }
@@ -833,8 +768,8 @@ impl App {
                 if self.use_punctuation {
                     if let Some(first_new_word) = new_words.first_mut() {
                         if let Some(last_word) = self.word_stream.last() {
-                            if Self::ends_with_terminator(last_word) {
-                                Self::capitalize_word(first_new_word);
+                            if strings::ends_with_terminator(last_word) {
+                                strings::capitalize_word(first_new_word);
                             }
                         }
                     }
@@ -852,7 +787,6 @@ impl App {
                 if self.generated_count < target {
                     let mut new_words = self.generate_smart_word(&mut rng);
 
-                    // optional: basic duplicate prevention
                     if let Some(last) = self.word_stream.last() {
                         if let Some(first_new) = new_words.first() {
                             if last == first_new {
@@ -864,8 +798,8 @@ impl App {
                     if self.use_punctuation {
                         if let Some(first_new_word) = new_words.first_mut() {
                             if let Some(last_word) = self.word_stream.last() {
-                                if Self::ends_with_terminator(last_word) {
-                                    Self::capitalize_word(first_new_word);
+                                if strings::ends_with_terminator(last_word) {
+                                    strings::capitalize_word(first_new_word);
                                 }
                             }
                         }
@@ -884,29 +818,15 @@ impl App {
             return;
         }
         if let Some(first) = self.word_stream.first_mut() {
-            Self::capitalize_word(first);
+            strings::capitalize_word(first);
         }
         let len = self.word_stream.len();
         for i in 0..len - 1 {
-            let should_cap = Self::ends_with_terminator(&self.word_stream[i]);
+            let should_cap = strings::ends_with_terminator(&self.word_stream[i]);
             if should_cap {
-                Self::capitalize_word(&mut self.word_stream[i + 1]);
+                strings::capitalize_word(&mut self.word_stream[i + 1]);
             }
         }
-    }
-
-    fn capitalize_word(w: &mut String) {
-        if let Some(idx) = w.find(|c: char| c.is_alphabetic()) {
-            let mut chars: Vec<char> = w.chars().collect();
-            if let Some(c) = chars.get_mut(idx) {
-                *c = c.to_uppercase().next().unwrap_or(*c);
-            }
-            *w = chars.into_iter().collect();
-        }
-    }
-
-    fn ends_with_terminator(w: &str) -> bool {
-        w.contains('.') || w.contains('!') || w.contains('?')
     }
 
     fn update_stream_string(&mut self) {

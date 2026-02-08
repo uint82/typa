@@ -1,10 +1,12 @@
 mod app;
 mod config;
+mod models;
 mod ui;
 pub mod utils;
 
 use anyhow::Result;
-use app::{App, Mode, QuoteLength, QuoteSelector};
+use app::App;
+use models::{Mode, QuoteLength, QuoteSelector};
 use clap::builder::RangedU64ValueParser;
 use clap::{ArgAction, ArgGroup, Parser};
 use config::AppConfig;

@@ -2,7 +2,8 @@ pub mod results;
 pub mod test;
 pub mod utils;
 
-use crate::app::{App, AppState};
+use crate::app::App;
+use crate::models::AppState;
 use crate::ui::utils::hex_to_rgb;
 use ratatui::{
     style::Style,

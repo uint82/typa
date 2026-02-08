@@ -1,4 +1,5 @@
-use crate::app::{App, Mode, QuoteSelector};
+use crate::app::App;
+use crate::models::{Mode, QuoteSelector};
 use crate::ui::utils::hex_to_rgb;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},

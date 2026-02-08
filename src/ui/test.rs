@@ -1,4 +1,5 @@
-use crate::app::{App, Mode};
+use crate::app::App;
+use crate::models::Mode;
 use crate::ui::utils::{format_timer, hex_to_rgb};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},

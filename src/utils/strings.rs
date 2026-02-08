@@ -38,6 +38,20 @@ pub fn clean_typography_symbols(text: &str) -> String {
     output
 }
 
+pub fn capitalize_word(w: &mut String) {
+    if let Some(idx) = w.find(|c: char| c.is_alphabetic()) {
+        let mut chars: Vec<char> = w.chars().collect();
+        if let Some(c) = chars.get_mut(idx) {
+            *c = c.to_uppercase().next().unwrap_or(*c);
+        }
+        *w = chars.into_iter().collect();
+    }
+}
+
+pub fn ends_with_terminator(w: &str) -> bool {
+    w.contains('.') || w.contains('!') || w.contains('?')
+}
+
 fn is_quote(c: char) -> bool {
     matches!(c, '"' | '“' | '”' | '„' | '\'' | '’' | '‘' | 'ʼ' | '᾽')
 }
