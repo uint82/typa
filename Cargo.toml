@@ -1,12 +1,14 @@
 [package]
-name = "crabtype"
+name = "typa"
 description = "A minimal, terminal-based typing speed test written in Rust."
 version = "0.1.0"
 edition = "2021"
+readme = "README.md"
 license = "GPL-3.0"
-repository = "https://github.com/uint82/crabtype"
+repository = "https://github.com/uint82/typa.git"
+homepage = "https://github.com/uint82/typa"
+authors = ["Hilmi Abroor <abroorhilmi@gmail.com>"]
 keywords = ["typing", "cli", "game", "terminal"]
-categories = ["command-line-utilities", "games", "typingtest"]
 include = ["src/**/*", "resources/**/*", "README.md", "LICENSE"]
 
 [dependencies]

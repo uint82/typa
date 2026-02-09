@@ -47,7 +47,7 @@ impl AppConfig {
             .set_default("theme.subAlt", defaults.sub_alt)?
             .set_default("theme.error", defaults.error)?;
 
-        if let Some(proj_dirs) = ProjectDirs::from("", "", "crabtype") {
+        if let Some(proj_dirs) = ProjectDirs::from("", "", "typa") {
             let config_dir = proj_dirs.config_dir();
             let config_path = config_dir.join("config.toml");
 

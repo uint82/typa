@@ -22,7 +22,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 
 #[derive(Parser, Debug)]
-#[command(name = "crabtype")]
+#[command(name = "typa")]
 #[command(version)]
 #[command(about = "A rusty terminal typing test", long_about = None)]
 // disable the default flags so i can customize them manually below
