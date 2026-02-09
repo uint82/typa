@@ -118,18 +118,17 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let mut global_char_idx = 0;
     let input_chars: Vec<char> = app.input.chars().collect();
-    let mut cursor_screen_pos: Option<(u16, u16)> = None;
     let text_area = inner_chunks[2];
 
     let color_correct = hex_to_rgb(&app.theme.text);
     let color_incorrect = hex_to_rgb(&app.theme.error);
     let color_future = hex_to_rgb(&app.theme.sub);
 
-    // caret block is 'caret', text inside is 'bg' (for contrast)
+    // caret block is 'caret', text inside is 'sub' (for contrast)
     let color_cursor_bg = hex_to_rgb(&app.theme.caret);
-    let color_cursor_fg = hex_to_rgb(&app.theme.bg);
+    let color_cursor_fg = hex_to_rgb(&app.theme.sub);
 
-    for (line_idx, line_str) in lines_to_show.enumerate() {
+    for line_str in lines_to_show {
         let mut spans: Vec<Span> = Vec::new();
         for (char_idx, c) in line_str.chars().enumerate() {
             let current_idx = global_char_idx + char_idx;
@@ -171,9 +170,6 @@ pub fn draw(f: &mut Frame, app: &App) {
                     }
                 }
             } else if current_idx == input_chars.len() {
-                let screen_x = text_area.x + char_idx as u16;
-                let screen_y = text_area.y + line_idx as u16;
-                cursor_screen_pos = Some((screen_x, screen_y));
 
                 spans.push(Span::styled(
                     c.to_string(),
@@ -183,14 +179,14 @@ pub fn draw(f: &mut Frame, app: &App) {
                 spans.push(Span::styled(c.to_string(), Style::default().fg(color_future)));
             }
         }
-
-        // handle cursor at end of line
-        let line_end_idx = global_char_idx + line_str.len();
+        let line_end_idx = global_char_idx + line_str.chars().count();
         if input_chars.len() == line_end_idx {
-            let screen_x = text_area.x + line_str.chars().count() as u16;
-            let screen_y = text_area.y + line_idx as u16;
-            cursor_screen_pos = Some((screen_x, screen_y));
+            spans.push(Span::styled(
+                " ",
+                Style::default().bg(color_cursor_bg),
+            ));
         }
+
 
         global_char_idx += line_str.len() + 1;
         visible_lines.push(Line::from(spans));
@@ -200,10 +196,6 @@ pub fn draw(f: &mut Frame, app: &App) {
         Paragraph::new(visible_lines).alignment(Alignment::Left),
         text_area,
     );
-
-    if let Some((x, y)) = cursor_screen_pos {
-        f.set_cursor_position((x, y));
-    }
 
     if app.show_ui {
         let footer = Paragraph::new("tab: restart | esc: quit")
