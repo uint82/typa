@@ -51,3 +51,25 @@ pub struct WordData {
     pub name: String,
     pub words: Vec<String>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WordState {
+    Pending,
+    Active,
+    Typed,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Word {
+    pub text: String,
+    pub state: WordState,
+}
+
+impl Word {
+    pub fn new(text: String) -> Self {
+        Self {
+            text,
+            state: WordState::Pending,
+        }
+    }
+}
