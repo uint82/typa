@@ -1,23 +1,32 @@
 use crate::app::App;
 use crate::models::{Mode, QuoteSelector};
-use crate::ui::utils::{hex_to_rgb, get_quote_length_category};
+use crate::ui::utils::{hex_to_rgb, get_quote_length_category, render_header, render_footer};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Paragraph},
     Frame,
 };
 
 pub fn draw(f: &mut Frame, app: &App) {
-    let chunks = Layout::default()
+    render_header(f, app);
+
+    let main_area = Rect::new(
+        0,
+        2,
+        f.area().width,
+        f.area().height.saturating_sub(3),
+    );
+
+    let vertical_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Fill(1),
-            Constraint::Length(14),
+            Constraint::Length(12),
             Constraint::Fill(1),
         ])
-        .split(f.area());
+        .split(main_area);
 
     let horizontal_layout = Layout::default()
         .direction(Direction::Horizontal)
@@ -26,16 +35,9 @@ pub fn draw(f: &mut Frame, app: &App) {
             Constraint::Percentage(80),
             Constraint::Fill(1),
         ])
-        .split(chunks[1]);
+        .split(vertical_chunks[1]);
 
     let area = horizontal_layout[1];
-
-    let block = Block::default()
-        .title(" Result ")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(hex_to_rgb(&app.theme.sub_alt)));
-
-    f.render_widget(block, area);
 
     let inner_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -46,7 +48,6 @@ pub fn draw(f: &mut Frame, app: &App) {
             Constraint::Length(2),
             Constraint::Length(2),
             Constraint::Fill(1),
-            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(area);
@@ -182,10 +183,5 @@ pub fn draw(f: &mut Frame, app: &App) {
         );
     }
 
-    f.render_widget(
-        Paragraph::new("Press TAB to Restart")
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(sub_color)),
-        inner_layout[6],
-    );
+    render_footer(f, app);
 }

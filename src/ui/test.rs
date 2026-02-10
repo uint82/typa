@@ -1,8 +1,8 @@
 use crate::app::App;
 use crate::models::Mode;
-use crate::ui::utils::{format_timer, hex_to_rgb};
+use crate::ui::utils::{format_timer, hex_to_rgb, render_header, render_footer};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::Style,
     text::{Line, Span},
     widgets::Paragraph,
@@ -41,38 +41,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
     };
 
-    let mut header_spans = Vec::new();
-    // use 'main' for active brand, 'sub' for inactive
-    let brand_color = if app.show_ui {
-        hex_to_rgb(&app.theme.main)
-    } else {
-        hex_to_rgb(&app.theme.sub)
-    };
-
-    header_spans.push(Span::styled(
-        "typa",
-        Style::default()
-            .fg(brand_color)
-            .add_modifier(ratatui::style::Modifier::BOLD),
-    ));
-    if app.show_ui {
-        header_spans.push(Span::styled(
-            format!(" | mode: {:?}", app.mode),
-            Style::default().fg(hex_to_rgb(&app.theme.sub)),
-        ));
-    }
-    let header_row_area = Rect::new(0, 1, f.area().width, 1);
-
-    let header_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Fill(1),
-            Constraint::Percentage(82),
-            Constraint::Fill(1),
-        ])
-        .split(header_row_area);
-
-    f.render_widget(Paragraph::new(Line::from(header_spans)), header_layout[1]);
+    render_header(f, app);
 
     let vertical_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -197,10 +166,5 @@ pub fn draw(f: &mut Frame, app: &App) {
         text_area,
     );
 
-    if app.show_ui {
-        let footer = Paragraph::new("tab: restart | esc: quit")
-            .style(Style::default().fg(hex_to_rgb(&app.theme.sub)))
-            .alignment(Alignment::Center);
-        f.render_widget(footer, Rect::new(0, f.area().height - 1, f.area().width, 1));
-    }
+    render_footer(f, app);
 }
