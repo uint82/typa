@@ -74,6 +74,12 @@ pub struct App {
 
     pub word_data: WordData,
     pub next_word_index: usize,
+
+    pub wpm_history: Vec<(f64, f64)>,
+    pub raw_wpm_history: Vec<(f64, f64)>,
+    pub errors_history: Vec<(f64, f64)>,
+    last_snapshot_second: u64,
+    prev_incorrect_keystrokes: usize,
 }
 
 impl App {
@@ -150,6 +156,11 @@ impl App {
             word_data,
             quote_data,
             next_word_index: 0,
+            wpm_history: Vec::new(),
+            raw_wpm_history: Vec::new(),
+            errors_history: Vec::new(),
+            last_snapshot_second: u64::MAX,
+            prev_incorrect_keystrokes: 0,
         };
 
         app.restart_test();
@@ -189,6 +200,11 @@ impl App {
         self.total_quote_words = 0;
         self.original_quote_length = 0;
         self.next_word_index = 0;
+        self.wpm_history.clear();
+        self.raw_wpm_history.clear();
+        self.errors_history.clear();
+        self.last_snapshot_second = u64::MAX;
+        self.prev_incorrect_keystrokes = 0;
         self.generate_initial_words();
     }
 
@@ -205,29 +221,78 @@ impl App {
     pub fn end_test(&mut self) {
         self.state = AppState::Finished;
         let duration_secs = self.start_time.map(|t| t.elapsed().as_secs_f64()).unwrap_or(1.0);
-        let duration_min = duration_secs / 60.0;
-        let gross_wpm = (self.gross_char_count as f64 / 5.0) / duration_min;
-        self.final_raw_wpm = gross_wpm;
 
-        let mut screen_incorrect = 0;
-        let mut screen_missed = 0;
-        let mut screen_extra = 0;
-
-        for (i, c) in self.input.chars().enumerate() {
-            if i < self.display_mask.len() {
-                if self.display_mask[i] {
-                    screen_extra += 1;
-                } else {
-                    let target = self.display_string.chars().nth(i).unwrap_or(' ');
-                    if c == '\0' { screen_missed += 1; }
-                    else if c != target { screen_incorrect += 1; }
-                }
+        // in time mode the timer fires mid-word. the untyped remainder of the
+        // partial word should not count as missed chars. only judge what was typed.
+        if let Mode::Time(_) = self.mode {
+            let typed_len = self.input.len();
+            if typed_len < self.display_string.len() {
+                let truncated: String = self.display_string.chars().take(typed_len).collect();
+                self.display_string = truncated;
+                self.display_mask.truncate(typed_len);
             }
         }
 
-        let total_uncorrected = self.uncorrected_errors_scrolled + screen_incorrect + screen_missed + screen_extra;
-        let error_rate = total_uncorrected as f64 / duration_min;
-        self.final_wpm = (gross_wpm - error_rate).max(0.0);
+        let input_ends_with_space = self.input.ends_with(' ');
+        let (completed_input, current_word_input) = if input_ends_with_space || self.input.is_empty() {
+            (self.input.as_str(), "")
+        } else {
+            if let Some(last_space_pos) = self.input.rfind(' ') {
+                let completed = &self.input[..=last_space_pos];
+                let current = &self.input[last_space_pos+1..];
+                (completed, current)
+            } else {
+                ("", self.input.as_str())
+            }
+        };
+
+        let completed_display_len = completed_input.len();
+        let completed_display: String = self.display_string.chars().take(completed_display_len).collect();
+        let completed_mask: Vec<bool> = self.display_mask.iter().take(completed_display_len).copied().collect();
+
+        let (_, _, completed_correct_chars, _, _, _) =
+            self.calculate_custom_stats_for_slice(completed_input, &completed_display, &completed_mask);
+
+        let current_word_correct_chars = if !current_word_input.is_empty() {
+            let input_words: Vec<&str> = self.input.split(' ').collect();
+            let current_word_idx = if input_ends_with_space {
+                input_words.len().saturating_sub(1)
+            } else {
+                input_words.len().saturating_sub(1)
+            };
+
+            if current_word_idx < self.word_stream.len() {
+                let target_word = &self.word_stream[current_word_idx].text;
+
+                let mut has_error = false;
+                for (i, c) in current_word_input.chars().enumerate() {
+                    if let Some(target_c) = target_word.chars().nth(i) {
+                        if c != target_c {
+                            has_error = true;
+                            break;
+                        }
+                    } else {
+                        has_error = true;
+                        break;
+                    }
+                }
+
+                if !has_error {
+                    current_word_input.len()
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let total_correct_chars = self.st_correct + completed_correct_chars + current_word_correct_chars;
+
+        self.final_raw_wpm = (self.gross_char_count as f64 / 5.0) * (60.0 / duration_secs);
+        self.final_wpm = (total_correct_chars as f64 / 5.0) * (60.0 / duration_secs);
 
         let total_keystrokes = self.live_correct_keystrokes + self.live_incorrect_keystrokes;
         if total_keystrokes > 0 {
@@ -238,6 +303,106 @@ impl App {
 
         self.final_time = duration_secs;
         self.show_ui = true;
+
+        let last_full_second = if self.last_snapshot_second == u64::MAX {
+            0.0
+        } else {
+            self.last_snapshot_second as f64
+        };
+        let remaining = duration_secs - last_full_second;
+
+        // only record final snapshot if >= 0.495 seconds remain after last full second
+        if remaining >= 0.495 {
+            self.push_snapshot(duration_secs);
+        }
+    }
+
+    fn push_snapshot(&mut self, elapsed_secs: f64) {
+        if elapsed_secs <= 0.0 { return; }
+
+        let input_ends_with_space = self.input.ends_with(' ');
+        let (completed_input, current_word_input) = if input_ends_with_space || self.input.is_empty() {
+            (self.input.as_str(), "")
+        } else {
+            if let Some(last_space_pos) = self.input.rfind(' ') {
+                let completed = &self.input[..=last_space_pos];
+                let current = &self.input[last_space_pos+1..];
+                (completed, current)
+            } else {
+                ("", self.input.as_str())
+            }
+        };
+
+        let completed_display_len = completed_input.len();
+        let completed_display: String = self.display_string.chars().take(completed_display_len).collect();
+        let completed_mask: Vec<bool> = self.display_mask.iter().take(completed_display_len).copied().collect();
+
+        let (_, _, completed_correct_chars, _, _, _) =
+            self.calculate_custom_stats_for_slice(completed_input, &completed_display, &completed_mask);
+
+        // if word has ANY error, entire word gets 0. otherwise count correct chars typed so far.
+        let current_word_correct_chars = if !current_word_input.is_empty() {
+            let input_words: Vec<&str> = self.input.split(' ').collect();
+            let current_word_idx = if input_ends_with_space {
+                input_words.len().saturating_sub(1)
+            } else {
+                input_words.len().saturating_sub(1)
+            };
+
+            if current_word_idx < self.word_stream.len() {
+                let target_word = &self.word_stream[current_word_idx].text;
+
+                let mut has_error = false;
+                for (i, c) in current_word_input.chars().enumerate() {
+                    if let Some(target_c) = target_word.chars().nth(i) {
+                        if c != target_c {
+                            has_error = true;
+                            break;
+                        }
+                    } else {
+                        has_error = true;
+                        break;
+                    }
+                }
+
+                if !has_error {
+                    current_word_input.len()
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let total_correct_chars = self.st_correct + completed_correct_chars + current_word_correct_chars;
+        let raw_wpm = (self.gross_char_count as f64 / 5.0) * (60.0 / elapsed_secs);
+        let net_wpm = (total_correct_chars as f64 / 5.0) * (60.0 / elapsed_secs);
+
+        let errors_this_second = (self.live_incorrect_keystrokes
+            .saturating_sub(self.prev_incorrect_keystrokes)) as f64;
+        self.prev_incorrect_keystrokes = self.live_incorrect_keystrokes;
+
+        self.wpm_history.push((elapsed_secs, net_wpm));
+        self.raw_wpm_history.push((elapsed_secs, raw_wpm));
+        self.errors_history.push((elapsed_secs, errors_this_second));
+    }
+
+    pub fn record_snapshot_if_needed(&mut self) {
+        if self.state != AppState::Running { return; }
+        if let Some(start) = self.start_time {
+            let elapsed_secs = start.elapsed().as_secs_f64();
+            // use floor for cleaner second boundaries
+            let current_second = elapsed_secs.floor() as u64;
+
+            if current_second >= 1 &&
+               (self.last_snapshot_second == u64::MAX || current_second > self.last_snapshot_second) {
+                self.last_snapshot_second = current_second;
+                self.push_snapshot(current_second as f64);
+            }
+        }
     }
 
     pub fn on_key(&mut self, c: char) {
@@ -246,6 +411,8 @@ impl App {
             self.start_time = Some(Instant::now());
             self.state = AppState::Running;
         }
+
+        self.record_snapshot_if_needed();
 
         let current_input_segments: Vec<&str> = self.input.split(' ').collect();
         let word_idx = current_input_segments.len().saturating_sub(1);
@@ -265,9 +432,12 @@ impl App {
             }
         }
 
+        // must track accuracy before cursor manipulation to capture the actual keystroke intent
         self.show_ui = false;
         self.gross_char_count += 1;
 
+        // instead of comparing global indices (which break on extra chars),
+        // we compare relative to the current active word.
         let is_keystroke_correct = if word_idx < self.word_stream.len() {
             let target_word = &self.word_stream[word_idx].text;
             let user_current_word = current_input_segments.last().unwrap_or(&"");
@@ -541,44 +711,44 @@ impl App {
     }
 
     fn recalculate_lines(&mut self) {
-    let layout_width = (self.terminal_width as usize * 80) / 100;
-    let safe_width = layout_width.saturating_sub(2);
+        let layout_width = (self.terminal_width as usize * 80) / 100;
+        let safe_width = layout_width.saturating_sub(2);
 
-    let mut lines = Vec::new();
-    let mut current_line = String::new();
-    let mut current_width = 0;
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+        let mut current_width = 0;
 
-    let words: Vec<&str> = self.display_string.split(' ').collect();
+        let words: Vec<&str> = self.display_string.split(' ').collect();
 
-    for word in words.iter() {
-        let word_len = word.chars().count();
+        for word in words.iter() {
+            let word_len = word.chars().count();
 
-        let space_before = if current_width == 0 { 0 } else { 1 };
-        let total_needed = current_width + space_before + word_len;
+            let space_before = if current_width == 0 { 0 } else { 1 };
+            let total_needed = current_width + space_before + word_len;
 
-        if total_needed <= safe_width {
-            if current_width > 0 {
-                current_line.push(' ');
-                current_width += 1;
+            if total_needed <= safe_width {
+                if current_width > 0 {
+                    current_line.push(' ');
+                    current_width += 1;
+                }
+                current_line.push_str(word);
+                current_width += word_len;
+            } else {
+                if !current_line.is_empty() {
+                    lines.push(current_line.clone());
+                }
+                current_line.clear();
+                current_line.push_str(word);
+                current_width = word_len;
             }
-            current_line.push_str(word);
-            current_width += word_len;
-        } else {
-            if !current_line.is_empty() {
-                lines.push(current_line.clone());
-            }
-            current_line.clear();
-            current_line.push_str(word);
-            current_width = word_len;
         }
-    }
 
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
 
-    self.visual_lines = lines;
-}
+        self.visual_lines = lines;
+    }
 
     fn check_scroll_trigger(&mut self) {
         let mut running_char_count = 0;
