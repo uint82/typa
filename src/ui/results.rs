@@ -90,6 +90,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
     };
 
+    let bg_color    = hex_to_rgb(&app.theme.bg);
     let sub_color   = hex_to_rgb(&app.theme.sub);
     let main_color  = hex_to_rgb(&app.theme.main);
     let error_color = hex_to_rgb(&app.theme.error);
@@ -98,19 +99,19 @@ pub fn draw(f: &mut Frame, app: &App) {
         LayoutMode::Full => {
             draw_test_type_header(f, app, content_layout[0], sub_color, main_color);
             draw_full_stats_card(f, app, content_layout[2], sub_color, main_color);
-            draw_chart(f, app, content_layout[4], sub_color, main_color, error_color, true);
+            draw_chart(f, app, content_layout[4], bg_color, sub_color, main_color, error_color, true);
             draw_full_footer(f, app, content_layout[6], sub_color, main_color);
         },
         LayoutMode::Compact => {
             draw_test_type_header(f, app, content_layout[0], sub_color, main_color);
             draw_compact_stats_card(f, app, content_layout[1], sub_color, main_color);
-            draw_chart(f, app, content_layout[2], sub_color, main_color, error_color, true);
+            draw_chart(f, app, content_layout[2], bg_color, sub_color, main_color, error_color, true);
             draw_compact_footer(f, app, content_layout[3], sub_color, main_color);
         },
         LayoutMode::UltraCompact => {
             draw_test_type_header(f, app, content_layout[0], sub_color, main_color);
             draw_ultra_compact_stats(f, app, content_layout[1], sub_color, main_color);
-            draw_chart(f, app, content_layout[2], sub_color, main_color, error_color, false);
+            draw_chart(f, app, content_layout[2], bg_color, sub_color, main_color, error_color, false);
             draw_ultra_compact_footer(f, app, content_layout[3], sub_color, main_color);
         }
     }
@@ -497,6 +498,7 @@ fn draw_chart(
     f: &mut Frame,
     app: &App,
     area: Rect,
+    bg_color: ratatui::style::Color,
     sub_color:   ratatui::style::Color,
     main_color:  ratatui::style::Color,
     error_color: ratatui::style::Color,
@@ -623,6 +625,7 @@ fn draw_chart(
 
     let chart = Chart::new(datasets)
         .block(Block::default().borders(Borders::NONE))
+        .style(Style::default().bg(bg_color))
         .x_axis(
             Axis::default()
                 .style(Style::default().fg(sub_color))
