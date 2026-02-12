@@ -1,7 +1,7 @@
 [package]
 name = "typa"
 description = "A minimal, terminal-based typing speed test written in Rust."
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 readme = "README.md"
 license = "GPL-3.0"
