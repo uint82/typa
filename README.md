@@ -28,6 +28,12 @@ Typa is designed to be a lightweight, keyboard-centric alternative to web-based 
 
 ## Installation
 
+### Install with Cargo
+
+```bash
+cargo install typa
+```
+
 ### Build from Source
 
 1. **Clone Repository**
@@ -40,28 +46,13 @@ cd typa
 2. **Build the project**
 
 ```bash
-cargo build --release
+cargo install --path .
 ```
 
 3. **Run the binary**
 
 ```bash
 ./target/release/typa
-```
-
-### Install with Cargo
-
-1. **Clone Repository**
-
-```bash
-git clone https://github.com/uint82/typa.git
-cd typa
-```
-
-2. **Install to cargo**
-
-```bash
-cargo install --path .
 ```
 
 ## Usage
