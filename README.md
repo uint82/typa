@@ -224,6 +224,7 @@ chore: update dependencies
 - Additional theme presets
 - Performance optimizations
 - Bug fixes and testing
+- Adding test history
 
 ### Reporting Issues
 
