@@ -428,7 +428,8 @@ impl App {
             }
 
             if c != ' ' {
-                if self.will_cause_visual_wrap(c) { return; }
+                let is_extra = user_current_word.len() >= target_word.len();
+                if self.will_cause_visual_wrap(c, is_extra) { return; }
             }
         }
 
@@ -685,11 +686,11 @@ impl App {
         self.recalculate_lines();
     }
 
-    fn will_cause_visual_wrap(&self, extra_char: char) -> bool {
+    fn will_cause_visual_wrap(&self, extra_char: char, is_extra: bool) -> bool {
         let mut candidate_display = self.display_string.clone();
         candidate_display.push(extra_char);
         let layout_width = (self.terminal_width as usize * 80) / 100;
-        let safe_width = layout_width.saturating_sub(2);
+        let safe_width = if is_extra { layout_width } else { layout_width.saturating_sub(2) };
         let options = Options::new(safe_width);
         let current_lines = textwrap::wrap(&self.display_string, options.clone());
         let candidate_lines = textwrap::wrap(&candidate_display, options);
@@ -697,7 +698,11 @@ impl App {
         let current_line_idx = self.get_line_index_for_cursor(&current_lines, current_cursor_pos);
         let candidate_cursor_pos = current_cursor_pos + 1;
         let candidate_line_idx = self.get_line_index_for_cursor(&candidate_lines, candidate_cursor_pos);
-        candidate_line_idx > current_line_idx
+        if is_extra {
+            candidate_line_idx > current_line_idx
+        } else {
+            candidate_line_idx >= 3
+        }
     }
 
     fn get_line_index_for_cursor(&self, lines: &[std::borrow::Cow<'_, str>], cursor_pos: usize) -> usize {
