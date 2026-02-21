@@ -40,7 +40,6 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let area = horizontal_layout[1];
 
-    // responsive layout
     let available_height = area.height;
 
     let layout_mode = if available_height >= 25 {
@@ -218,7 +217,7 @@ fn draw_full_stats_card(
     f.render_widget(Paragraph::new(secondary).alignment(Alignment::Center), rows[4]);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
 
     let total_chars = app.st_correct + vis_raw_cor + app.st_incorrect + vis_raw_inc +
                       app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
@@ -284,7 +283,7 @@ fn draw_compact_stats_card(
     f.render_widget(Paragraph::new(secondary).alignment(Alignment::Center), rows[1]);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
 
     let total_chars = app.st_correct + vis_raw_cor + app.st_incorrect + vis_raw_inc +
                       app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
@@ -335,7 +334,7 @@ fn draw_ultra_compact_stats(
         .split(area);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
 
     let total_chars = app.st_correct + vis_raw_cor + app.st_incorrect + vis_raw_inc +
                       app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
@@ -391,7 +390,7 @@ fn draw_full_footer(
         .split(area);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
 
     let char_detail = Line::from(vec![
         Span::styled("chars: ", Style::default().fg(sub_color)),

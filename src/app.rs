@@ -7,8 +7,7 @@ use crate::generator::WordGenerator;
 use anyhow::{Context, Result};
 use rust_embed::RustEmbed;
 use std::time::Instant;
-use textwrap::Options;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(RustEmbed)]
 #[folder = "resources/"]
@@ -71,6 +70,13 @@ pub struct App {
     pub visual_lines: Vec<String>,
     pub display_string: String,
     pub display_mask: Vec<bool>,
+    pub extra_char_count: usize,
+
+    /// word_idx: how many chars the user skipped by pressing space early
+    pub missed_chars: HashMap<usize, usize>,
+    /// mirrors display_string 1-to-1 up to the cursor. '\0' where chars were missed.
+    /// the renderer uses this instead of self.input so missed positions render correctly.
+    pub aligned_input: Vec<char>,
 
     pub word_data: WordData,
     pub next_word_index: usize,
@@ -148,6 +154,9 @@ impl App {
             word_stream_string: String::new(),
             display_string: String::new(),
             display_mask: Vec::new(),
+            extra_char_count: 0,
+            missed_chars: HashMap::new(),
+            aligned_input: Vec::new(),
             terminal_width: 80,
             visual_lines: Vec::new(),
             quote_pool: Vec::new(),
@@ -177,6 +186,8 @@ impl App {
     pub fn restart_test(&mut self) {
         self.input.clear();
         self.cursor_idx = 0;
+        self.missed_chars.clear();
+        self.aligned_input.clear();
         self.start_time = None;
         self.state = AppState::Waiting;
         self.gross_char_count = 0;
@@ -222,10 +233,9 @@ impl App {
         self.state = AppState::Finished;
         let duration_secs = self.start_time.map(|t| t.elapsed().as_secs_f64()).unwrap_or(1.0);
 
-        // in time mode the timer fires mid-word. the untyped remainder of the
-        // partial word should not count as missed chars. only judge what was typed.
+        // in time mode the timer fires mid-word. untyped chars at the end shouldn't count as missed
         if let Mode::Time(_) = self.mode {
-            let typed_len = self.input.len();
+            let typed_len = self.aligned_input.len();
             if typed_len < self.display_string.len() {
                 let truncated: String = self.display_string.chars().take(typed_len).collect();
                 self.display_string = truncated;
@@ -233,63 +243,7 @@ impl App {
             }
         }
 
-        let input_ends_with_space = self.input.ends_with(' ');
-        let (completed_input, current_word_input) = if input_ends_with_space || self.input.is_empty() {
-            (self.input.as_str(), "")
-        } else {
-            if let Some(last_space_pos) = self.input.rfind(' ') {
-                let completed = &self.input[..=last_space_pos];
-                let current = &self.input[last_space_pos+1..];
-                (completed, current)
-            } else {
-                ("", self.input.as_str())
-            }
-        };
-
-        let completed_display_len = completed_input.len();
-        let completed_display: String = self.display_string.chars().take(completed_display_len).collect();
-        let completed_mask: Vec<bool> = self.display_mask.iter().take(completed_display_len).copied().collect();
-
-        let (_, _, completed_correct_chars, _, _, _) =
-            self.calculate_custom_stats_for_slice(completed_input, &completed_display, &completed_mask);
-
-        let current_word_correct_chars = if !current_word_input.is_empty() {
-            let input_words: Vec<&str> = self.input.split(' ').collect();
-            let current_word_idx = if input_ends_with_space {
-                input_words.len().saturating_sub(1)
-            } else {
-                input_words.len().saturating_sub(1)
-            };
-
-            if current_word_idx < self.word_stream.len() {
-                let target_word = &self.word_stream[current_word_idx].text;
-
-                let mut has_error = false;
-                for (i, c) in current_word_input.chars().enumerate() {
-                    if let Some(target_c) = target_word.chars().nth(i) {
-                        if c != target_c {
-                            has_error = true;
-                            break;
-                        }
-                    } else {
-                        has_error = true;
-                        break;
-                    }
-                }
-
-                if !has_error {
-                    current_word_input.len()
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
-        } else {
-            0
-        };
-
-        let total_correct_chars = self.st_correct + completed_correct_chars + current_word_correct_chars;
+        let total_correct_chars = self.st_correct + self.calculate_live_correct_chars();
 
         self.final_raw_wpm = (self.gross_char_count as f64 / 5.0) * (60.0 / duration_secs);
         self.final_wpm = (total_correct_chars as f64 / 5.0) * (60.0 / duration_secs);
@@ -311,7 +265,7 @@ impl App {
         };
         let remaining = duration_secs - last_full_second;
 
-        // only record final snapshot if >= 0.495 seconds remain after last full second
+        // skip the final snapshot if it's too close to the last full-second snapshot to avoid a duplicate
         if remaining >= 0.495 {
             self.push_snapshot(duration_secs);
         }
@@ -320,64 +274,7 @@ impl App {
     fn push_snapshot(&mut self, elapsed_secs: f64) {
         if elapsed_secs <= 0.0 { return; }
 
-        let input_ends_with_space = self.input.ends_with(' ');
-        let (completed_input, current_word_input) = if input_ends_with_space || self.input.is_empty() {
-            (self.input.as_str(), "")
-        } else {
-            if let Some(last_space_pos) = self.input.rfind(' ') {
-                let completed = &self.input[..=last_space_pos];
-                let current = &self.input[last_space_pos+1..];
-                (completed, current)
-            } else {
-                ("", self.input.as_str())
-            }
-        };
-
-        let completed_display_len = completed_input.len();
-        let completed_display: String = self.display_string.chars().take(completed_display_len).collect();
-        let completed_mask: Vec<bool> = self.display_mask.iter().take(completed_display_len).copied().collect();
-
-        let (_, _, completed_correct_chars, _, _, _) =
-            self.calculate_custom_stats_for_slice(completed_input, &completed_display, &completed_mask);
-
-        // if word has ANY error, entire word gets 0. otherwise count correct chars typed so far.
-        let current_word_correct_chars = if !current_word_input.is_empty() {
-            let input_words: Vec<&str> = self.input.split(' ').collect();
-            let current_word_idx = if input_ends_with_space {
-                input_words.len().saturating_sub(1)
-            } else {
-                input_words.len().saturating_sub(1)
-            };
-
-            if current_word_idx < self.word_stream.len() {
-                let target_word = &self.word_stream[current_word_idx].text;
-
-                let mut has_error = false;
-                for (i, c) in current_word_input.chars().enumerate() {
-                    if let Some(target_c) = target_word.chars().nth(i) {
-                        if c != target_c {
-                            has_error = true;
-                            break;
-                        }
-                    } else {
-                        has_error = true;
-                        break;
-                    }
-                }
-
-                if !has_error {
-                    current_word_input.len()
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
-        } else {
-            0
-        };
-
-        let total_correct_chars = self.st_correct + completed_correct_chars + current_word_correct_chars;
+        let total_correct_chars = self.st_correct + self.calculate_live_correct_chars();
         let raw_wpm = (self.gross_char_count as f64 / 5.0) * (60.0 / elapsed_secs);
         let net_wpm = (total_correct_chars as f64 / 5.0) * (60.0 / elapsed_secs);
 
@@ -394,7 +291,7 @@ impl App {
         if self.state != AppState::Running { return; }
         if let Some(start) = self.start_time {
             let elapsed_secs = start.elapsed().as_secs_f64();
-            // use floor for cleaner second boundaries
+            // floor gives clean integer second boundaries instead of rounding artefacts
             let current_second = elapsed_secs.floor() as u64;
 
             if current_second >= 1 &&
@@ -422,6 +319,8 @@ impl App {
             let target_word = &target_word_struct.text;
             let user_current_word = current_input_segments.last().unwrap_or(&"");
 
+            if c == ' ' && user_current_word.is_empty() { return; }
+
             let limit = target_word.len() + 19;
             if user_current_word.len() >= limit {
                 if c != ' ' { return; }
@@ -433,12 +332,11 @@ impl App {
             }
         }
 
-        // must track accuracy before cursor manipulation to capture the actual keystroke intent
+        // accuracy must be recorded before mutating input so we capture the actual intent
         self.show_ui = false;
         self.gross_char_count += 1;
 
-        // instead of comparing global indices (which break on extra chars),
-        // we compare relative to the current active word.
+        // compare relative to the current word. global indices break when extra chars shift positions
         let is_keystroke_correct = if word_idx < self.word_stream.len() {
             let target_word = &self.word_stream[word_idx].text;
             let user_current_word = current_input_segments.last().unwrap_or(&"");
@@ -465,83 +363,23 @@ impl App {
 
         if !is_keystroke_correct {
             self.total_errors_ever += 1;
-        } else {
-            self.total_errors_ever += 1;
         }
 
         if word_idx < self.word_stream.len() {
-            let target_word_struct = &self.word_stream[word_idx];
-            let target_word = &target_word_struct.text;
-            let user_current_word = current_input_segments.last().unwrap_or(&"");
-
             if c == ' ' {
-                if user_current_word.is_empty() { return; }
-
-                let mut is_word_error = false;
-                let mut extra_len_penalty = 0;
-
-                if user_current_word != target_word {
-                    is_word_error = true;
-                }
-
-                if user_current_word.len() > target_word.len() {
-                    extra_len_penalty = user_current_word.len() - target_word.len();
-                }
-
-                if !self.processed_word_errors.contains(&word_idx) {
-                    if is_word_error || extra_len_penalty > 0 {
-                        let word_penalty = if is_word_error { 1 } else { 0 };
-                        self.total_errors_ever += word_penalty + extra_len_penalty;
-                        self.processed_word_errors.insert(word_idx);
-                    }
-                }
-
-                if user_current_word.len() < target_word.len() {
-                    let missing_count = target_word.len() - user_current_word.len();
-                    for _ in 0..missing_count {
-                        self.input.push('\0');
-                        self.cursor_idx += 1;
-                    }
-                }
+                let user_current_word = current_input_segments.last().unwrap_or(&"").to_string();
+                self.handle_space_press(word_idx, &user_current_word);
             }
         }
 
         self.input.push(c);
-        self.cursor_idx += 1;
-
-        self.sync_display_text();
 
         if c == ' ' {
             self.on_word_finished();
         }
+        self.sync_display_text();
         self.check_scroll_trigger();
-
-        match self.mode {
-            Mode::Words(_) | Mode::Quote(_) => {
-                let extra_count = self.display_mask.iter().filter(|&&is_extra| is_extra).count();
-                let effective_len = self.input.len().saturating_sub(extra_count);
-
-                if effective_len >= self.word_stream_string.len() {
-                    let target_words: Vec<&str> = self.word_stream_string.split(' ').collect();
-                    let input_words: Vec<&str> = self.input.split(' ').collect();
-
-                    if let Some(last_target_word) = target_words.last() {
-                        let last_word_index = target_words.len() - 1;
-                        let last_input_word = input_words.get(last_word_index).unwrap_or(&"");
-
-                        let cleaned_input: String = last_input_word
-                            .chars()
-                            .filter(|&c| c != '\0')
-                            .collect();
-
-                        if &cleaned_input == last_target_word {
-                            self.end_test();
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
+        self.check_test_completion();
     }
 
     pub fn on_backspace(&mut self) {
@@ -570,15 +408,99 @@ impl App {
         }
 
         if let Some(popped_char) = self.input.pop() {
-            self.cursor_idx = self.cursor_idx.saturating_sub(1);
-            if popped_char == ' ' || popped_char == '\0' {
-                while self.input.ends_with('\0') {
-                    self.input.pop();
-                    self.cursor_idx = self.cursor_idx.saturating_sub(1);
-                }
+            if popped_char == ' ' {
+                // clear missed record so the word is treated as fresh when re-typed
+                let word_idx = self.input.split(' ').count().saturating_sub(1);
+                self.missed_chars.remove(&word_idx);
             }
             self.sync_display_text();
         }
+    }
+
+    fn handle_space_press(&mut self, word_idx: usize, user_current_word: &str) {
+        let target_word = self.word_stream[word_idx].text.clone();
+
+        let is_word_error = user_current_word != target_word;
+        let extra_len_penalty = user_current_word.len().saturating_sub(target_word.len());
+
+        if !self.processed_word_errors.contains(&word_idx) && (is_word_error || extra_len_penalty > 0) {
+            let word_penalty = if is_word_error { 1 } else { 0 };
+            self.total_errors_ever += word_penalty + extra_len_penalty;
+            self.processed_word_errors.insert(word_idx);
+        }
+
+        if user_current_word.len() < target_word.len() {
+            let missing_count = target_word.len() - user_current_word.len();
+            self.missed_chars.insert(word_idx, missing_count);
+        }
+    }
+
+    fn check_test_completion(&mut self) {
+        match self.mode {
+            Mode::Words(_) | Mode::Quote(_) => {
+                // subtract extras only. aligned_input includes \0 slots for missed chars
+                let effective_len = self.aligned_input.len().saturating_sub(self.extra_char_count);
+                if effective_len < self.word_stream_string.len() { return; }
+
+                let target_words: Vec<&str> = self.word_stream_string.split(' ').collect();
+                let input_words: Vec<&str> = self.input.split(' ').collect();
+
+                if let Some(last_target_word) = target_words.last() {
+                    let last_word_index = target_words.len() - 1;
+                    let last_input_word = input_words.get(last_word_index).unwrap_or(&"");
+                    if last_input_word == last_target_word {
+                        self.end_test();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn calculate_live_correct_chars(&self) -> usize {
+        let ends_with_space = self.aligned_input.last() == Some(&' ');
+
+        let completed_len = if ends_with_space || self.aligned_input.is_empty() {
+            self.aligned_input.len()
+        } else {
+            self.aligned_input.iter().rposition(|&c| c == ' ')
+                .map(|p| p + 1)
+                .unwrap_or(0)
+        };
+
+        let completed_aligned = &self.aligned_input[..completed_len];
+        let completed_display: String = self.display_string.chars().take(completed_len).collect();
+        let completed_mask: Vec<bool> = self.display_mask.iter().take(completed_len).copied().collect();
+
+        let (_, _, completed_correct_chars, _, _, _) =
+            self.calculate_custom_stats_for_slice(completed_aligned, &completed_display, &completed_mask);
+
+        // use self.input for the in-progress word. it has no \0 so indexing is unambiguous
+        let current_word_input = if ends_with_space || self.aligned_input.is_empty() {
+            ""
+        } else if let Some(last_space) = self.input.rfind(' ') {
+            &self.input[last_space + 1..]
+        } else {
+            self.input.as_str()
+        };
+
+        // any error in the current word scores the whole word as 0
+        let current_word_correct_chars = if !current_word_input.is_empty() {
+            let current_word_idx = self.input.split(' ').count().saturating_sub(1);
+            if let Some(word) = self.word_stream.get(current_word_idx) {
+                let target_word = &word.text;
+                let has_error = current_word_input.chars().enumerate().any(|(i, c)| {
+                    target_word.chars().nth(i).map_or(true, |tc| c != tc)
+                });
+                if has_error { 0 } else { current_word_input.len() }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        completed_correct_chars + current_word_correct_chars
     }
 
     fn on_word_finished(&mut self) {
@@ -616,6 +538,7 @@ impl App {
         self.generated_count = result.generated_count;
         self.next_word_index = result.next_index;
         self.update_stream_string();
+        self.sync_display_text();
 
         if matches!(self.mode, Mode::Quote(_)) {
             self.original_quote_length = self.word_stream_string.chars().count();
@@ -645,7 +568,6 @@ impl App {
             .map(|w| w.text.as_str())
             .collect::<Vec<&str>>()
             .join(" ");
-        self.sync_display_text();
     }
 
     fn sync_display_text(&mut self) {
@@ -653,10 +575,12 @@ impl App {
         let input_chars: Vec<char> = self.input.chars().collect();
 
         let mut new_display = String::with_capacity(self.word_stream_string.len() + 20);
-        let mut new_mask = Vec::with_capacity(self.word_stream_string.len() + 20);
+        let mut new_mask: Vec<bool> = Vec::with_capacity(self.word_stream_string.len() + 20);
+        let mut new_aligned: Vec<char> = Vec::with_capacity(self.word_stream_string.len() + 20);
 
         let mut clean_idx = 0;
         let mut input_idx = 0;
+        let mut word_idx = 0usize;
 
         while clean_idx < clean_chars.len() {
             let clean_char = clean_chars[clean_idx];
@@ -664,40 +588,58 @@ impl App {
                 while input_idx < input_chars.len() && input_chars[input_idx] != ' ' {
                     new_display.push(input_chars[input_idx]);
                     new_mask.push(true);
+                    new_aligned.push(input_chars[input_idx]);
                     input_idx += 1;
                 }
-                new_display.push(' ');
-                new_mask.push(false);
-                clean_idx += 1;
                 if input_idx < input_chars.len() && input_chars[input_idx] == ' ' {
+                    // inject \0 slots so aligned_input has the right length for missed positions
+                    if let Some(&missed) = self.missed_chars.get(&word_idx) {
+                        for _ in 0..missed {
+                            new_aligned.push('\0');
+                        }
+                    }
+                    new_display.push(' ');
+                    new_mask.push(false);
+                    new_aligned.push(' ');
                     input_idx += 1;
+                    word_idx += 1;
+                } else {
+                    new_display.push(' ');
+                    new_mask.push(false);
                 }
+                clean_idx += 1;
             } else {
                 new_display.push(clean_char);
                 new_mask.push(false);
                 clean_idx += 1;
                 if input_idx < input_chars.len() && input_chars[input_idx] != ' ' {
+                    new_aligned.push(input_chars[input_idx]);
                     input_idx += 1;
                 }
             }
         }
+
         self.display_string = new_display;
         self.display_mask = new_mask;
+        self.aligned_input = new_aligned;
+        self.extra_char_count = self.display_mask.iter().filter(|&&x| x).count();
+        // cursor_idx mirrors aligned_input length so callers never need to track it manually
+        self.cursor_idx = self.aligned_input.len();
         self.recalculate_lines();
     }
 
     fn will_cause_visual_wrap(&self, extra_char: char, is_extra: bool) -> bool {
+        let layout_width = (self.terminal_width as usize * 80) / 100;
+        // extra chars use the full width. no caret buffer needed since they trail behind it
+        let candidate_width = if is_extra { layout_width } else { layout_width.saturating_sub(2) };
+
+        let current_line_idx = Self::line_idx_for_cursor(&self.visual_lines, self.aligned_input.len());
+
         let mut candidate_display = self.display_string.clone();
         candidate_display.push(extra_char);
-        let layout_width = (self.terminal_width as usize * 80) / 100;
-        let safe_width = if is_extra { layout_width } else { layout_width.saturating_sub(2) };
-        let options = Options::new(safe_width);
-        let current_lines = textwrap::wrap(&self.display_string, options.clone());
-        let candidate_lines = textwrap::wrap(&candidate_display, options);
-        let current_cursor_pos = self.input.len();
-        let current_line_idx = self.get_line_index_for_cursor(&current_lines, current_cursor_pos);
-        let candidate_cursor_pos = current_cursor_pos + 1;
-        let candidate_line_idx = self.get_line_index_for_cursor(&candidate_lines, candidate_cursor_pos);
+        let candidate_lines = Self::wrap_into_lines(&candidate_display, candidate_width);
+        let candidate_line_idx = Self::line_idx_for_cursor(&candidate_lines, self.aligned_input.len() + 1);
+
         if is_extra {
             candidate_line_idx > current_line_idx
         } else {
@@ -705,33 +647,17 @@ impl App {
         }
     }
 
-    fn get_line_index_for_cursor(&self, lines: &[std::borrow::Cow<'_, str>], cursor_pos: usize) -> usize {
-        let mut running_count = 0;
-        for (i, line) in lines.iter().enumerate() {
-            let line_len = line.len() + 1;
-            if cursor_pos < running_count + line_len { return i; }
-            running_count += line_len;
-        }
-        if lines.is_empty() { 0 } else { lines.len() - 1 }
-    }
-
-    fn recalculate_lines(&mut self) {
-        let layout_width = (self.terminal_width as usize * 80) / 100;
-        let safe_width = layout_width.saturating_sub(2);
-
-        let mut lines = Vec::new();
+    /// used by both recalculate_lines and will_cause_visual_wrap so they always agree on boundaries
+    fn wrap_into_lines(text: &str, width: usize) -> Vec<String> {
+        let mut lines: Vec<String> = Vec::new();
         let mut current_line = String::new();
-        let mut current_width = 0;
+        let mut current_width = 0usize;
 
-        let words: Vec<&str> = self.display_string.split(' ').collect();
-
-        for word in words.iter() {
+        for word in text.split(' ') {
             let word_len = word.chars().count();
-
             let space_before = if current_width == 0 { 0 } else { 1 };
-            let total_needed = current_width + space_before + word_len;
 
-            if total_needed <= safe_width {
+            if current_width + space_before + word_len <= width {
                 if current_width > 0 {
                     current_line.push(' ');
                     current_width += 1;
@@ -747,12 +673,26 @@ impl App {
                 current_width = word_len;
             }
         }
-
         if !current_line.is_empty() {
             lines.push(current_line);
         }
+        lines
+    }
 
-        self.visual_lines = lines;
+    fn line_idx_for_cursor(lines: &[String], cursor_pos: usize) -> usize {
+        let mut running = 0usize;
+        for (i, line) in lines.iter().enumerate() {
+            let line_len = line.len() + 1; // +1 accounts for the space that separates lines
+            if cursor_pos < running + line_len { return i; }
+            running += line_len;
+        }
+        if lines.is_empty() { 0 } else { lines.len() - 1 }
+    }
+
+    fn recalculate_lines(&mut self) {
+        let layout_width = (self.terminal_width as usize * 80) / 100;
+        let safe_width = layout_width.saturating_sub(2);
+        self.visual_lines = Self::wrap_into_lines(&self.display_string, safe_width);
     }
 
     fn check_scroll_trigger(&mut self) {
@@ -760,7 +700,7 @@ impl App {
         let mut current_line_index = 0;
         for (i, line) in self.visual_lines.iter().enumerate() {
             let line_len = line.len() + 1;
-            if self.input.len() < running_char_count + line_len {
+            if self.aligned_input.len() < running_char_count + line_len {
                 current_line_index = i;
                 break;
             }
@@ -783,12 +723,14 @@ impl App {
             }
         }
 
-        let input_chunk: String = self.input.chars().take(chars_to_remove_visual).collect();
+        // aligned_input has \0 for missed positions, so stats are accurate even for short words
+        let capped = chars_to_remove_visual.min(self.aligned_input.len());
+        let aligned_chunk = &self.aligned_input[..capped];
         let display_chunk: String = self.display_string.chars().take(chars_to_remove_visual).collect();
         let mask_chunk: Vec<bool> = self.display_mask.iter().take(chars_to_remove_visual).cloned().collect();
 
         let (acc_cor, acc_inc, raw_cor, raw_inc, raw_ext, raw_mis) =
-            self.calculate_custom_stats_for_slice(&input_chunk, &display_chunk, &mask_chunk);
+            self.calculate_custom_stats_for_slice(aligned_chunk, &display_chunk, &mask_chunk);
 
         self.st_correct += raw_cor;
         self.st_incorrect += raw_inc;
@@ -800,16 +742,25 @@ impl App {
 
         self.uncorrected_errors_scrolled += raw_inc + raw_mis + raw_ext;
 
-        if self.input.len() >= chars_to_remove_visual {
-            let chunk_being_removed = &self.input[..chars_to_remove_visual];
-            let words_scrolled = chunk_being_removed.split_whitespace().count();
+        let words_scrolled = aligned_chunk.iter().filter(|&&c| c == ' ').count();
+        if words_scrolled > 0 {
             self.scrolled_word_count += words_scrolled;
+            let drain_amount = words_scrolled.min(self.word_stream.len());
+            self.word_stream.drain(0..drain_amount);
+            self.furthest_word_idx = self.furthest_word_idx.saturating_sub(words_scrolled);
 
-            if words_scrolled > 0 {
-                let drain_amount = words_scrolled.min(self.word_stream.len());
-                self.word_stream.drain(0..drain_amount);
-                self.furthest_word_idx = self.furthest_word_idx.saturating_sub(words_scrolled);
-            }
+            // word indices shift down after scrolling, so remap both maps to stay in sync
+            self.missed_chars = self.missed_chars
+                .iter()
+                .filter(|(&k, _)| k >= words_scrolled)
+                .map(|(&k, &v)| (k - words_scrolled, v))
+                .collect();
+
+            self.processed_word_errors = self.processed_word_errors
+                .iter()
+                .filter(|&&k| k >= words_scrolled)
+                .map(|&k| k - words_scrolled)
+                .collect();
         }
 
         let mut real_chars_removed = 0;
@@ -824,18 +775,15 @@ impl App {
             }
         }
 
-        if self.cursor_idx >= chars_to_remove_visual {
-            self.cursor_idx -= chars_to_remove_visual;
-        } else {
-            self.cursor_idx = 0;
-        }
-        if self.input.len() >= chars_to_remove_visual {
-            self.input.drain(0..chars_to_remove_visual);
-        }
+        // self.input has no \0 so we count real chars from aligned_chunk to know how many to drain
+        let clean_chars_to_remove = aligned_chunk.iter().filter(|&&c| c != '\0').count();
+        let byte_len: usize = self.input.chars().take(clean_chars_to_remove).map(|c| c.len_utf8()).sum();
+        self.input.drain(..byte_len);
+
         self.sync_display_text();
     }
 
-    pub fn calculate_custom_stats_for_slice(&self, input_str: &str, display_str: &str, mask: &[bool])
+    pub fn calculate_custom_stats_for_slice(&self, input_chars: &[char], display_str: &str, mask: &[bool])
         -> (isize, isize, usize, usize, usize, usize)
     {
         let mut acc_correct_score: isize = 0;
@@ -847,7 +795,6 @@ impl App {
         let mut raw_ext = 0;
         let mut raw_mis = 0;
 
-        let input_chars: Vec<char> = input_str.chars().collect();
         let display_chars: Vec<char> = display_str.chars().collect();
 
         let mut i = 0;

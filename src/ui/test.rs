@@ -23,7 +23,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Words(total) => {
             let visible_words = app.input.split_whitespace().count();
             let mut total_typed = app.scrolled_word_count + visible_words;
-            let is_finished = app.input.len() >= app.word_stream_string.len();
+            let is_finished = app.aligned_input.len() >= app.word_stream_string.len();
             if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
                 total_typed = total_typed.saturating_sub(1);
             }
@@ -33,7 +33,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             let visible_words = app.input.split_whitespace().count();
             let mut typed_words = app.scrolled_word_count + visible_words;
             let is_finished =
-                app.input.len() >= app.word_stream_string.len() && app.quote_pool.is_empty();
+                app.aligned_input.len() >= app.word_stream_string.len() && app.quote_pool.is_empty();
             if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
                 typed_words = typed_words.saturating_sub(1);
             }
@@ -86,14 +86,13 @@ pub fn draw(f: &mut Frame, app: &App) {
     let lines_to_show = app.visual_lines.iter().take(3);
 
     let mut global_char_idx = 0;
-    let input_chars: Vec<char> = app.input.chars().collect();
+    let input_chars = &app.aligned_input;
     let text_area = inner_chunks[2];
 
     let color_correct = hex_to_rgb(&app.theme.text);
     let color_incorrect = hex_to_rgb(&app.theme.error);
     let color_future = hex_to_rgb(&app.theme.sub);
 
-    // caret block is 'caret', text inside is 'sub' (for contrast)
     let color_cursor_bg = hex_to_rgb(&app.theme.caret);
     let color_cursor_fg = hex_to_rgb(&app.theme.sub);
 
