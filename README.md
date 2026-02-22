@@ -132,8 +132,8 @@ Typa supports custom color themes via a TOML configuration file.
 The configuration file should be named `config.toml` and placed in:
 
 - **Linux**: `~/.config/typa/config.toml`
-- **macOS**: `$HOME/Library/Application Support/typa/config.toml`
-- **Windows**: `C:\Users\user\AppData\Roaming\typa\config.toml`
+- **macOS**: `$HOME/Library/Application Support/typa/config/config.toml`
+- **Windows**: `C:\Users\user\AppData\Roaming\typa\config\config.toml`
 
 **Note**: If the configuration directory doesn't exist, you'll need to create it manually before adding your `config.toml` file.
 
