@@ -47,8 +47,7 @@ impl WordGenerator {
                 word_controller::generate_time_batch(&self.source, &self.rules, &mut rng)
             }
             Mode::Words(count) => {
-                let (stream, count) = word_controller::generate_count_batch(&self.source, &self.rules, *count, &mut rng);
-                generated_count = count;
+                let (stream, _) = word_controller::generate_count_batch(&self.source, &self.rules, *count, &mut rng);
                 stream
             }
             Mode::Quote(selector) => {
@@ -62,6 +61,11 @@ impl WordGenerator {
 
         if self.rules.use_punctuation && !matches!(mode, Mode::Quote(_)) {
             formatting::finalize_stream_punctuation(&mut raw_stream);
+        }
+
+        // count all tokens after finalization (em dashes count as words toward the limit)
+        if matches!(mode, Mode::Words(_)) {
+            generated_count = raw_stream.len();
         }
 
         let word_stream: Vec<Word> = raw_stream
@@ -102,7 +106,11 @@ impl WordGenerator {
 
         let new_raw_words = match mode {
             Mode::Time(_) => {
-                let mut new_words = word_controller::generate_smart_word(&self.source, &self.rules, &mut rng);
+                let is_sentence_start = context_strings.last()
+                    .map(|w| word_controller::is_sentence_end_pub(w))
+                    .unwrap_or(true);
+                let ctx = word_controller::build_context_pub(&context_strings);
+                let mut new_words = word_controller::generate_smart_word(&self.source, &self.rules, &mut rng, is_sentence_start, &ctx);
                 formatting::apply_contextual_capitalization(&mut new_words, &context_strings, self.rules.use_punctuation);
                 Some(new_words)
             }
@@ -111,8 +119,11 @@ impl WordGenerator {
             },
             Mode::Words(target) => {
                 if generated_count < *target {
+                    let remaining = *target - generated_count;
                     let mut new_words = word_controller::generate_next_word(&self.source, &self.rules, &context_strings, &mut rng);
                     formatting::apply_contextual_capitalization(&mut new_words, &context_strings, self.rules.use_punctuation);
+                    // a word+dash pair could overshoot the last slot cap to remaining
+                    new_words.truncate(remaining);
                     Some(new_words)
                 } else {
                     None
