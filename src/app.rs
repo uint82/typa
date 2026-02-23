@@ -9,6 +9,7 @@ use rust_embed::RustEmbed;
 use std::time::Instant;
 use std::collections::{HashMap, HashSet};
 
+
 #[derive(RustEmbed)]
 #[folder = "resources/"]
 struct Asset;
@@ -72,9 +73,7 @@ pub struct App {
     pub display_mask: Vec<bool>,
     pub extra_char_count: usize,
 
-    /// word_idx: how many chars the user skipped by pressing space early
     pub missed_chars: HashMap<usize, usize>,
-    /// mirrors display_string 1-to-1 up to the cursor. '\0' where chars were missed.
     /// the renderer uses this instead of self.input so missed positions render correctly.
     pub aligned_input: Vec<char>,
 
@@ -236,7 +235,7 @@ impl App {
         // in time mode the timer fires mid-word. untyped chars at the end shouldn't count as missed
         if let Mode::Time(_) = self.mode {
             let typed_len = self.aligned_input.len();
-            if typed_len < self.display_string.len() {
+            if typed_len < self.display_string.chars().count() {
                 let truncated: String = self.display_string.chars().take(typed_len).collect();
                 self.display_string = truncated;
                 self.display_mask.truncate(typed_len);
@@ -321,13 +320,17 @@ impl App {
 
             if c == ' ' && user_current_word.is_empty() { return; }
 
-            let limit = target_word.len() + 19;
-            if user_current_word.len() >= limit {
+            let target_char_count = target_word.chars().count();
+            let user_char_count = user_current_word.chars().count();
+
+            // use char count for the limit, byte len is wrong for multi-byte chars like em dash
+            let limit = target_char_count + 19;
+            if user_char_count >= limit {
                 if c != ' ' { return; }
             }
 
             if c != ' ' {
-                let is_extra = user_current_word.len() >= target_word.len();
+                let is_extra = user_char_count >= target_char_count;
                 if self.will_cause_visual_wrap(c, is_extra) { return; }
             }
         }
@@ -342,10 +345,14 @@ impl App {
             let user_current_word = current_input_segments.last().unwrap_or(&"");
 
             if c == ' ' {
-                user_current_word == target_word
+                // word-level visual equality so hyphens typed against em-dash or en-dash counts as correct
+                Self::words_visually_equal(user_current_word, target_word)
             } else {
-                if user_current_word.len() < target_word.len() {
-                    let target_char = target_word.chars().nth(user_current_word.len()).unwrap_or('\0');
+                let user_char_count = user_current_word.chars().count();
+                let target_char_count = target_word.chars().count();
+                if user_char_count < target_char_count {
+                    // use char index, not byte index. target_word may contain multi-byte chars
+                    let target_char = target_word.chars().nth(user_char_count).unwrap_or('\0');
                     strings::are_characters_visually_equal(c, target_char)
                 } else {
                     false
@@ -417,11 +424,28 @@ impl App {
         }
     }
 
+    fn words_visually_equal(typed: &str, target: &str) -> bool {
+        let mut t = typed.chars();
+        let mut g = target.chars();
+        loop {
+            let pair = (t.next(), g.next());
+            if let (Some(a), Some(b)) = pair {
+                if !strings::are_characters_visually_equal(a, b) { return false; }
+            } else {
+                return pair == (None, None);
+            }
+        }
+    }
+
     fn handle_space_press(&mut self, word_idx: usize, user_current_word: &str) {
         let target_word = self.word_stream[word_idx].text.clone();
 
-        let is_word_error = user_current_word != target_word;
-        let extra_len_penalty = user_current_word.len().saturating_sub(target_word.len());
+        // visual equality so "-" typed against "—" is not counted as an error
+        let is_word_error = !Self::words_visually_equal(user_current_word, &target_word);
+        // char counts, byte lengths are wrong for multi-byte chars like "—" (3 bytes, 1 char)
+        let user_chars = user_current_word.chars().count();
+        let target_chars = target_word.chars().count();
+        let extra_len_penalty = user_chars.saturating_sub(target_chars);
 
         if !self.processed_word_errors.contains(&word_idx) && (is_word_error || extra_len_penalty > 0) {
             let word_penalty = if is_word_error { 1 } else { 0 };
@@ -429,8 +453,8 @@ impl App {
             self.processed_word_errors.insert(word_idx);
         }
 
-        if user_current_word.len() < target_word.len() {
-            let missing_count = target_word.len() - user_current_word.len();
+        if user_chars < target_chars {
+            let missing_count = target_chars - user_chars;
             self.missed_chars.insert(word_idx, missing_count);
         }
     }
@@ -440,7 +464,7 @@ impl App {
             Mode::Words(_) | Mode::Quote(_) => {
                 // subtract extras only. aligned_input includes \0 slots for missed chars
                 let effective_len = self.aligned_input.len().saturating_sub(self.extra_char_count);
-                if effective_len < self.word_stream_string.len() { return; }
+                if effective_len < self.word_stream_string.chars().count() { return; }
 
                 let target_words: Vec<&str> = self.word_stream_string.split(' ').collect();
                 let input_words: Vec<&str> = self.input.split(' ').collect();
@@ -484,15 +508,14 @@ impl App {
             self.input.as_str()
         };
 
-        // any error in the current word scores the whole word as 0
         let current_word_correct_chars = if !current_word_input.is_empty() {
             let current_word_idx = self.input.split(' ').count().saturating_sub(1);
             if let Some(word) = self.word_stream.get(current_word_idx) {
                 let target_word = &word.text;
                 let has_error = current_word_input.chars().enumerate().any(|(i, c)| {
-                    target_word.chars().nth(i).map_or(true, |tc| c != tc)
+                    target_word.chars().nth(i).map_or(true, |tc| !strings::are_characters_visually_equal(c, tc))
                 });
-                if has_error { 0 } else { current_word_input.len() }
+                if has_error { 0 } else { current_word_input.chars().count() }
             } else {
                 0
             }
@@ -553,10 +576,10 @@ impl App {
             self.generated_count,
             self.next_word_index,
         ) {
-            self.word_stream.extend(new_words);
+            self.word_stream.extend(new_words.iter().cloned());
             self.next_word_index = new_next_index;
             if matches!(self.mode, Mode::Words(_)) {
-                self.generated_count += 1;
+                self.generated_count += new_words.len();
             }
             self.update_stream_string();
         }
@@ -682,7 +705,7 @@ impl App {
     fn line_idx_for_cursor(lines: &[String], cursor_pos: usize) -> usize {
         let mut running = 0usize;
         for (i, line) in lines.iter().enumerate() {
-            let line_len = line.len() + 1; // +1 accounts for the space that separates lines
+            let line_len = line.chars().count() + 1; // +1 accounts for the space that separates lines
             if cursor_pos < running + line_len { return i; }
             running += line_len;
         }
@@ -699,7 +722,7 @@ impl App {
         let mut running_char_count = 0;
         let mut current_line_index = 0;
         for (i, line) in self.visual_lines.iter().enumerate() {
-            let line_len = line.len() + 1;
+            let line_len = line.chars().count() + 1;
             if self.aligned_input.len() < running_char_count + line_len {
                 current_line_index = i;
                 break;
@@ -742,24 +765,24 @@ impl App {
 
         self.uncorrected_errors_scrolled += raw_inc + raw_mis + raw_ext;
 
-        let words_scrolled = aligned_chunk.iter().filter(|&&c| c == ' ').count();
-        if words_scrolled > 0 {
-            self.scrolled_word_count += words_scrolled;
-            let drain_amount = words_scrolled.min(self.word_stream.len());
+        let tokens_scrolled = aligned_chunk.iter().filter(|&&c| c == ' ').count();
+        if tokens_scrolled > 0 {
+            self.scrolled_word_count += tokens_scrolled;
+            let drain_amount = tokens_scrolled.min(self.word_stream.len());
             self.word_stream.drain(0..drain_amount);
-            self.furthest_word_idx = self.furthest_word_idx.saturating_sub(words_scrolled);
+            self.furthest_word_idx = self.furthest_word_idx.saturating_sub(tokens_scrolled);
 
             // word indices shift down after scrolling, so remap both maps to stay in sync
             self.missed_chars = self.missed_chars
                 .iter()
-                .filter(|(&k, _)| k >= words_scrolled)
-                .map(|(&k, &v)| (k - words_scrolled, v))
+                .filter(|(&k, _)| k >= tokens_scrolled)
+                .map(|(&k, &v)| (k - tokens_scrolled, v))
                 .collect();
 
             self.processed_word_errors = self.processed_word_errors
                 .iter()
-                .filter(|&&k| k >= words_scrolled)
-                .map(|&k| k - words_scrolled)
+                .filter(|&&k| k >= tokens_scrolled)
+                .map(|&k| k - tokens_scrolled)
                 .collect();
         }
 
@@ -770,8 +793,13 @@ impl App {
             }
         }
         if real_chars_removed > 0 {
-            if self.word_stream_string.len() >= real_chars_removed {
-                self.word_stream_string = self.word_stream_string[real_chars_removed..].to_string();
+            // real_chars_removed is a char count. must convert to byte offset before slicing
+            let ws_byte_len: usize = self.word_stream_string.chars()
+                .take(real_chars_removed)
+                .map(|c| c.len_utf8())
+                .sum();
+            if self.word_stream_string.len() >= ws_byte_len {
+                self.word_stream_string = self.word_stream_string[ws_byte_len..].to_string();
             }
         }
 
@@ -818,7 +846,7 @@ impl App {
                 } else {
                     if input_char == '\0' {
                         word_has_error = true;
-                    } else if input_char != target_char {
+                    } else if !strings::are_characters_visually_equal(input_char, target_char) {
                         word_has_error = true;
                     }
                 }
@@ -836,7 +864,7 @@ impl App {
                     if input_char == '\0' {
                         acc_correct_score -= 1;
                         raw_mis += 1;
-                    } else if input_char != target_char {
+                    } else if !strings::are_characters_visually_equal(input_char, target_char) {
                         acc_correct_score -= 1;
                         acc_incorrect_score += 1;
                         raw_inc += 1;
