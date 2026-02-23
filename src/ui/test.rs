@@ -1,6 +1,7 @@
 use crate::app::App;
 use crate::models::Mode;
 use crate::ui::utils::{format_timer, hex_to_rgb, render_header, render_footer};
+use crate::utils::strings;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::Style,
@@ -23,7 +24,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Words(total) => {
             let visible_words = app.input.split_whitespace().count();
             let mut total_typed = app.scrolled_word_count + visible_words;
-            let is_finished = app.aligned_input.len() >= app.word_stream_string.len();
+            let is_finished = app.aligned_input.len() >= app.word_stream_string.chars().count();
             if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
                 total_typed = total_typed.saturating_sub(1);
             }
@@ -33,7 +34,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             let visible_words = app.input.split_whitespace().count();
             let mut typed_words = app.scrolled_word_count + visible_words;
             let is_finished =
-                app.aligned_input.len() >= app.word_stream_string.len() && app.quote_pool.is_empty();
+                app.aligned_input.len() >= app.word_stream_string.chars().count() && app.quote_pool.is_empty();
             if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
                 typed_words = typed_words.saturating_sub(1);
             }
@@ -93,6 +94,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let color_incorrect = hex_to_rgb(&app.theme.error);
     let color_future = hex_to_rgb(&app.theme.sub);
 
+    // caret block is 'caret', text inside is 'sub' (for contrast)
     let color_cursor_bg = hex_to_rgb(&app.theme.caret);
     let color_cursor_fg = hex_to_rgb(&app.theme.sub);
 
@@ -121,7 +123,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                     if input_char == '\0' {
                         // missed == future/sub color
                         spans.push(Span::styled(c.to_string(), Style::default().fg(color_future)));
-                    } else if input_char == c {
+                    } else if strings::are_characters_visually_equal(input_char, c) {
                         spans.push(Span::styled(
                             c.to_string(),
                             Style::default()
@@ -156,7 +158,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
 
 
-        global_char_idx += line_str.len() + 1;
+        global_char_idx += line_str.chars().count() + 1;
         visible_lines.push(Line::from(spans));
     }
 
