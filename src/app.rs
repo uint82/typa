@@ -1,4 +1,5 @@
 use crate::config::Theme;
+use crate::history;
 use crate::models::{
     AppState, Mode, QuoteData, WordData, Word, WordState
 };
@@ -175,7 +176,12 @@ impl App {
         Ok(app)
     }
 
-    pub fn quit(&mut self) { self.should_quit = true; }
+    pub fn quit(&mut self) {
+        if self.state == AppState::Running {
+            let _ = history::record_test(self, false);
+        }
+        self.should_quit = true;
+    }
     pub fn resize(&mut self, width: u16, _height: u16) {
         self.terminal_width = width;
         self.recalculate_lines();
@@ -183,6 +189,9 @@ impl App {
     pub fn on_mouse(&mut self) { if self.state != AppState::Finished { self.show_ui = true; } }
 
     pub fn restart_test(&mut self) {
+        if self.state == AppState::Running {
+            let _ = history::record_test(self, false);
+        }
         self.input.clear();
         self.cursor_idx = 0;
         self.missed_chars.clear();
@@ -268,6 +277,8 @@ impl App {
         if remaining >= 0.495 {
             self.push_snapshot(duration_secs);
         }
+
+        let _ = history::record_test(self, true);
     }
 
     fn push_snapshot(&mut self, elapsed_secs: f64) {
@@ -524,6 +535,21 @@ impl App {
         };
 
         completed_correct_chars + current_word_correct_chars
+    }
+
+    pub fn resolved_char_stats(&self) -> (usize, usize, usize, usize) {
+        let (_, _, vis_cor, vis_inc, vis_ext, vis_mis) =
+            self.calculate_custom_stats_for_slice(
+                &self.aligned_input,
+                &self.display_string,
+                &self.display_mask,
+            );
+        (
+            self.st_correct   + vis_cor,
+            self.st_incorrect + vis_inc,
+            self.st_extra     + vis_ext,
+            self.st_missed    + vis_mis,
+        )
     }
 
     fn on_word_finished(&mut self) {
