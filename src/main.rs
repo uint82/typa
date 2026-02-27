@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod models;
 mod ui;
+mod history;
 pub mod utils;
 mod generator;
 
@@ -67,6 +68,10 @@ struct Cli {
     #[arg(short, long, default_value_t = false, help_heading = "Flags")]
     punctuation: bool,
 
+    /// Show typing test history
+    #[arg(long, default_value_t = false, help_heading = "Flags")]
+    history: bool,
+
     /// Print help
     #[arg(short, long, action = ArgAction::Help, help_heading = "Flags")]
     help: Option<bool>,
@@ -78,6 +83,11 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if cli.history {
+        history::show_history()?;
+        return Ok(());
+    }
 
     let app_config = AppConfig::load().unwrap_or_else(|e| {
         eprintln!(
