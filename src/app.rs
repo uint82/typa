@@ -62,6 +62,7 @@ pub struct App {
     pub final_wpm: f64,
     pub final_raw_wpm: f64,
     pub final_accuracy: f64,
+    pub final_consistency: f64,
     pub final_time: f64,
     pub current_quote_source: String,
 
@@ -148,6 +149,7 @@ impl App {
             final_wpm: 0.0,
             final_raw_wpm: 0.0,
             final_accuracy: 0.0,
+            final_consistency: 0.0,
             final_time: 0.0,
             current_quote_source: String::new(),
             word_stream: Vec::new(),
@@ -277,6 +279,8 @@ impl App {
         if remaining >= 0.495 {
             self.push_snapshot(duration_secs);
         }
+
+        self.final_consistency = self.calculate_consistency();
 
         let _ = history::record_test(self, true);
     }
@@ -550,6 +554,18 @@ impl App {
             self.st_extra     + vis_ext,
             self.st_missed    + vis_mis,
         )
+    }
+
+    fn calculate_consistency(&self) -> f64 {
+        let wpms: Vec<f64> = self.wpm_history.iter().map(|(_, w)| *w).collect();
+        let n = wpms.len();
+        if n < 2 {
+            return 100.0;
+        }
+        let mean = wpms.iter().sum::<f64>() / n as f64;
+        let variance = wpms.iter().map(|w| (w - mean).powi(2)).sum::<f64>() / n as f64;
+        let std_dev = variance.sqrt();
+        (100.0 - std_dev).clamp(0.0, 100.0)
     }
 
     fn on_word_finished(&mut self) {
