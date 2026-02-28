@@ -213,6 +213,9 @@ fn draw_full_stats_card(
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("time ", Style::default().fg(sub_color)),
         Span::styled(format!("{:.1}s", app.final_time), Style::default().fg(main_color)),
+        Span::styled("  │  ", Style::default().fg(sub_color)),
+        Span::styled("consistency ", Style::default().fg(sub_color)),
+        Span::styled(format!("{:.0}%", app.final_consistency), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(secondary).alignment(Alignment::Center), rows[4]);
 
@@ -279,6 +282,9 @@ fn draw_compact_stats_card(
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("time ", Style::default().fg(sub_color)),
         Span::styled(format!("{:.1}s", app.final_time), Style::default().fg(main_color)),
+        Span::styled("  │  ", Style::default().fg(sub_color)),
+        Span::styled("con ", Style::default().fg(sub_color)),
+        Span::styled(format!("{:.0}%", app.final_consistency), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(secondary).alignment(Alignment::Center), rows[1]);
 
@@ -348,6 +354,9 @@ fn draw_ultra_compact_stats(
         Span::styled(" │ ", Style::default().fg(sub_color)),
         Span::styled("raw ", Style::default().fg(sub_color)),
         Span::styled(format!("{:.0}", app.final_raw_wpm), Style::default().fg(main_color)),
+        Span::styled(" │ ", Style::default().fg(sub_color)),
+        Span::styled("con ", Style::default().fg(sub_color)),
+        Span::styled(format!("{:.0}%", app.final_consistency), Style::default().fg(main_color)),
         Span::styled(" │ ", Style::default().fg(sub_color)),
         Span::styled(format!("{:.1}s", app.final_time), Style::default().fg(main_color)),
     ]);
