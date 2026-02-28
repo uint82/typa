@@ -23,6 +23,7 @@ pub struct TestRecord {
     pub wpm: Option<f64>,
     pub raw_wpm: Option<f64>,
     pub accuracy: Option<f64>,
+    pub consistency: Option<f64>,
     pub duration_secs: f64,
 
     pub correct_chars: Option<usize>,
@@ -95,6 +96,7 @@ pub fn show_history() -> Result<()> {
     const W_WPM:  usize = 7;
     const W_RAW:  usize = 7;
     const W_ACC:  usize = 9;
+    const W_CON:  usize = 9;
     const W_TIME: usize = 8;
     const W_DONE: usize = 5;
 
@@ -102,13 +104,15 @@ pub fn show_history() -> Result<()> {
     let show_mode = term_width >= base_width + W_MODE;
     let show_lang = term_width >= base_width + W_MODE + W_LANG;
     let show_raw  = term_width >= base_width + W_MODE + W_LANG + W_RAW;
-    let show_time = term_width >= base_width + W_MODE + W_LANG + W_RAW + W_TIME;
+    let show_con  = term_width >= base_width + W_MODE + W_LANG + W_RAW + W_CON;
+    let show_time = term_width >= base_width + W_MODE + W_LANG + W_RAW + W_CON + W_TIME;
 
     let total_width = 1
         + W_NUM + W_DATE + W_WPM + W_ACC + W_DONE
         + if show_mode { W_MODE } else { 0 }
         + if show_lang { W_LANG } else { 0 }
         + if show_raw  { W_RAW  } else { 0 }
+        + if show_con  { W_CON  } else { 0 }
         + if show_time { W_TIME } else { 0 };
 
     let divider = "-".repeat(total_width);
@@ -116,6 +120,9 @@ pub fn show_history() -> Result<()> {
     let completed: Vec<&TestRecord> = records.iter().filter(|r| r.completed).collect();
     let total = records.len();
     let done  = completed.len();
+    let lifetime_keystrokes: usize = records.iter()
+        .filter_map(|r| r.total_keystrokes)
+        .sum();
 
     println!();
     if !completed.is_empty() {
@@ -124,21 +131,22 @@ pub fn show_history() -> Result<()> {
         let best_wpm = completed.iter().filter_map(|r| r.wpm).fold(0.0_f64, f64::max);
 
         println!(
-            "  {} tests  |  {} completed  |  avg wpm {:.0}  |  best wpm {:.0}  |  avg acc {:.2}%",
-            total, done, avg_wpm, best_wpm, avg_acc
+            "  {} tests  |  {} completed  |  avg wpm {:.0}  |  best wpm {:.0}  |  avg acc {:.2}%  |  {} keystrokes",
+            total, done, avg_wpm, best_wpm, avg_acc, lifetime_keystrokes
         );
     } else {
-        println!("  {} tests total  |  {} completed", total, done);
+        println!("  {} tests total  |  {} completed  |  {} keystrokes", total, done, lifetime_keystrokes);
     }
     println!();
 
     print!(" {:<nw$}{:<dw$}", "#", "date", nw = W_NUM, dw = W_DATE);
-    if show_mode { print!("{:<mw$}", "mode",     mw = W_MODE); }
-    if show_lang { print!("{:<lw$}", "language", lw = W_LANG); }
+    if show_mode { print!("{:<mw$}", "mode",        mw = W_MODE); }
+    if show_lang { print!("{:<lw$}", "language",    lw = W_LANG); }
     print!("{:<ww$}", "wpm", ww = W_WPM);
-    if show_raw  { print!("{:<rw$}", "raw",  rw = W_RAW);  }
+    if show_raw  { print!("{:<rw$}", "raw",         rw = W_RAW);  }
     print!("{:<aw$}", "acc", aw = W_ACC);
-    if show_time { print!("{:<tw$}", "time", tw = W_TIME); }
+    if show_con  { print!("{:<cw$}", "consistency", cw = W_CON);  }
+    if show_time { print!("{:<tw$}", "time",        tw = W_TIME); }
     println!("done");
     println!(" {}", divider);
 
@@ -148,15 +156,17 @@ pub fn show_history() -> Result<()> {
         let wpm  = r.wpm.map(|v| format!("{:.0}", v)).unwrap_or_else(|| "-".to_string());
         let raw  = r.raw_wpm.map(|v| format!("{:.0}", v)).unwrap_or_else(|| "-".to_string());
         let acc  = r.accuracy.map(|v| format!("{:.2}%", v)).unwrap_or_else(|| "-".to_string());
+        let con  = r.consistency.map(|v| format!("{:.0}%", v)).unwrap_or_else(|| "-".to_string());
         let time = format!("{:.1}s", r.duration_secs);
         let done = if r.completed { "Y" } else { "N" };
 
         print!(" {:<nw$}{:<dw$}", i + 1, date, nw = W_NUM, dw = W_DATE);
-        if show_mode { print!("{:<mw$}", mode,        mw = W_MODE); }
-        if show_lang { print!("{:<lw$}", r.language,  lw = W_LANG); }
+        if show_mode { print!("{:<mw$}", mode,       mw = W_MODE); }
+        if show_lang { print!("{:<lw$}", r.language, lw = W_LANG); }
         print!("{:<ww$}", wpm, ww = W_WPM);
         if show_raw  { print!("{:<rw$}", raw,  rw = W_RAW);  }
         print!("{:<aw$}", acc, aw = W_ACC);
+        if show_con  { print!("{:<cw$}", con,  cw = W_CON);  }
         if show_time { print!("{:<tw$}", time, tw = W_TIME); }
         println!("{}", done);
     }
@@ -221,9 +231,10 @@ pub fn record_test(app: &App, completed: bool) -> Result<()> {
             use_numbers: app.use_numbers,
             duration_secs,
 
-            wpm:      Some(app.final_wpm),
-            raw_wpm:  Some(app.final_raw_wpm),
-            accuracy: Some(app.final_accuracy),
+            wpm:         Some(app.final_wpm),
+            raw_wpm:     Some(app.final_raw_wpm),
+            accuracy:    Some(app.final_accuracy),
+            consistency: Some(app.final_consistency),
 
             correct_chars:        Some(correct_chars),
             incorrect_chars:      Some(incorrect_chars),
@@ -249,9 +260,10 @@ pub fn record_test(app: &App, completed: bool) -> Result<()> {
             use_numbers: app.use_numbers,
             duration_secs,
 
-            wpm:      None,
-            raw_wpm:  None,
-            accuracy: None,
+            wpm:         None,
+            raw_wpm:     None,
+            accuracy:    None,
+            consistency: None,
 
             correct_chars:        None,
             incorrect_chars:      None,
@@ -273,3 +285,4 @@ pub fn record_test(app: &App, completed: bool) -> Result<()> {
     save_history(&records)?;
     Ok(())
 }
+
