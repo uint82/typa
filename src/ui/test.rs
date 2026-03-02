@@ -11,9 +11,9 @@ use ratatui::{
 };
 
 pub fn draw(f: &mut Frame, app: &App) {
-    let status_text = match app.mode {
+    let status_text = match app.config.mode {
         Mode::Time(limit) => {
-            let seconds = if let Some(start) = app.start_time {
+            let seconds = if let Some(start) = app.test.start_time {
                 let elapsed = start.elapsed().as_secs();
                 limit.saturating_sub(elapsed)
             } else {
@@ -22,23 +22,23 @@ pub fn draw(f: &mut Frame, app: &App) {
             format_timer(seconds)
         }
         Mode::Words(total) => {
-            let visible_words = app.input.split_whitespace().count();
-            let mut total_typed = app.scrolled_word_count + visible_words;
-            let is_finished = app.aligned_input.len() >= app.word_stream_string.chars().count();
-            if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
+            let visible_words = app.test.input.split_whitespace().count();
+            let mut total_typed = app.test.scrolled_word_count + visible_words;
+            let is_finished = app.test.aligned_input.len() >= app.test.word_stream_string.chars().count();
+            if !app.test.input.ends_with(' ') && !is_finished && visible_words > 0 {
                 total_typed = total_typed.saturating_sub(1);
             }
             format!("{}/{}", total_typed, total)
         }
         Mode::Quote(_) => {
-            let visible_words = app.input.split_whitespace().count();
-            let mut typed_words = app.scrolled_word_count + visible_words;
+            let visible_words = app.test.input.split_whitespace().count();
+            let mut typed_words = app.test.scrolled_word_count + visible_words;
             let is_finished =
-                app.aligned_input.len() >= app.word_stream_string.chars().count() && app.quote_pool.is_empty();
-            if !app.input.ends_with(' ') && !is_finished && visible_words > 0 {
+                app.test.aligned_input.len() >= app.test.word_stream_string.chars().count() && app.test.quote_pool.is_empty();
+            if !app.test.input.ends_with(' ') && !is_finished && visible_words > 0 {
                 typed_words = typed_words.saturating_sub(1);
             }
-            format!("{}/{}", typed_words, app.total_quote_words)
+            format!("{}/{}", typed_words, app.test.total_quote_words)
         }
     };
 
@@ -77,34 +77,34 @@ pub fn draw(f: &mut Frame, app: &App) {
             .alignment(Alignment::Left)
             .style(
                 Style::default()
-                    .fg(hex_to_rgb(&app.theme.main))
+                    .fg(hex_to_rgb(&app.config.theme.main))
                     .add_modifier(ratatui::style::Modifier::BOLD),
             ),
         inner_chunks[0],
     );
 
     let mut visible_lines: Vec<Line> = Vec::new();
-    let lines_to_show = app.visual_lines.iter().take(3);
+    let lines_to_show = app.test.visual_lines.iter().take(3);
 
     let mut global_char_idx = 0;
-    let input_chars = &app.aligned_input;
+    let input_chars = &app.test.aligned_input;
     let text_area = inner_chunks[2];
 
-    let color_correct = hex_to_rgb(&app.theme.text);
-    let color_incorrect = hex_to_rgb(&app.theme.error);
-    let color_future = hex_to_rgb(&app.theme.sub);
+    let color_correct = hex_to_rgb(&app.config.theme.text);
+    let color_incorrect = hex_to_rgb(&app.config.theme.error);
+    let color_future = hex_to_rgb(&app.config.theme.sub);
 
     // caret block is 'caret', text inside is 'sub' (for contrast)
-    let color_cursor_bg = hex_to_rgb(&app.theme.caret);
-    let color_cursor_fg = hex_to_rgb(&app.theme.sub);
+    let color_cursor_bg = hex_to_rgb(&app.config.theme.caret);
+    let color_cursor_fg = hex_to_rgb(&app.config.theme.sub);
 
     for line_str in lines_to_show {
         let mut spans: Vec<Span> = Vec::new();
         for (char_idx, c) in line_str.chars().enumerate() {
             let current_idx = global_char_idx + char_idx;
 
-            let is_extra_char = if current_idx < app.display_mask.len() {
-                app.display_mask[current_idx]
+            let is_extra_char = if current_idx < app.test.display_mask.len() {
+                app.test.display_mask[current_idx]
             } else {
                 false
             };

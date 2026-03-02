@@ -89,10 +89,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
     };
 
-    let bg_color    = hex_to_rgb(&app.theme.bg);
-    let sub_color   = hex_to_rgb(&app.theme.sub);
-    let main_color  = hex_to_rgb(&app.theme.main);
-    let error_color = hex_to_rgb(&app.theme.error);
+    let bg_color    = hex_to_rgb(&app.config.theme.bg);
+    let sub_color   = hex_to_rgb(&app.config.theme.sub);
+    let main_color  = hex_to_rgb(&app.config.theme.main);
+    let error_color = hex_to_rgb(&app.config.theme.error);
 
     match layout_mode {
         LayoutMode::Full => {
@@ -137,21 +137,21 @@ fn draw_test_type_header(
     sub_color: ratatui::style::Color,
     _main_color: ratatui::style::Color,
 ) {
-    let mode_str = match &app.mode {
+    let mode_str = match &app.config.mode {
         Mode::Time(t) => format!("time {}", t),
         Mode::Words(w) => format!("word {}", w),
         Mode::Quote(q) => match q {
-            QuoteSelector::Id(_) => format!("quote {}", get_quote_length_category(app.original_quote_length)),
+            QuoteSelector::Id(_) => format!("quote {}", get_quote_length_category(app.test.original_quote_length)),
             QuoteSelector::Category(len) => {
                 let s = format!("{:?}", len).to_lowercase();
-                format!("quote {}", if s == "all" { get_quote_length_category(app.original_quote_length) } else { &s })
+                format!("quote {}", if s == "all" { get_quote_length_category(app.test.original_quote_length) } else { &s })
             }
         },
     };
 
-    let mut type_parts = vec![mode_str, app.word_data.name.clone()];
-    if app.use_punctuation { type_parts.push("punctuation".to_string()); }
-    if app.use_numbers     { type_parts.push("number".to_string()); }
+    let mut type_parts = vec![mode_str, app.config.word_data.name.clone()];
+    if app.config.use_punctuation { type_parts.push("punctuation".to_string()); }
+    if app.config.use_numbers     { type_parts.push("number".to_string()); }
 
     let header = Line::from(vec![
         Span::styled(type_parts.join(" "), Style::default().fg(sub_color)),
@@ -188,7 +188,7 @@ fn draw_full_stats_card(
     let wpm_line = Line::from(vec![
         Span::styled("  WPM: ", Style::default().fg(sub_color)),
         Span::styled(
-            format!("{:.0}", app.final_wpm),
+            format!("{:.0}", app.test.final_wpm),
             Style::default()
                 .fg(main_color)
                 .add_modifier(ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED),
@@ -199,7 +199,7 @@ fn draw_full_stats_card(
     let acc_line = Line::from(vec![
         Span::styled("  Accuracy: ", Style::default().fg(sub_color)),
         Span::styled(
-            format!("{:.2}%", app.final_accuracy),
+            format!("{:.2}%", app.test.final_accuracy),
             Style::default()
                 .fg(main_color)
                 .add_modifier(ratatui::style::Modifier::BOLD),
@@ -209,31 +209,31 @@ fn draw_full_stats_card(
 
     let secondary = Line::from(vec![
         Span::styled("raw ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}", app.final_raw_wpm), Style::default().fg(main_color)),
+        Span::styled(format!("{:.0}", app.test.final_raw_wpm), Style::default().fg(main_color)),
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("time ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.1}s", app.final_time), Style::default().fg(main_color)),
+        Span::styled(format!("{:.1}s", app.test.final_time), Style::default().fg(main_color)),
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("consistency ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}%", app.final_consistency), Style::default().fg(main_color)),
+        Span::styled(format!("{:.0}%", app.test.final_consistency), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(secondary).alignment(Alignment::Center), rows[4]);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.test.aligned_input, &app.test.display_string, &app.test.display_mask);
 
-    let total_chars = app.st_correct + vis_raw_cor + app.st_incorrect + vis_raw_inc +
-                      app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
+    let total_chars = app.test.st_correct + vis_raw_cor + app.test.st_incorrect + vis_raw_inc +
+                      app.test.st_extra + vis_raw_ext + app.test.st_missed + vis_raw_mis;
 
     let acc_breakdown = Line::from(vec![
         Span::styled("correct ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_correct + vis_raw_cor), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_correct + vis_raw_cor), Style::default().fg(main_color)),
         Span::styled(" / ", Style::default().fg(sub_color)),
         Span::styled(format!("{}", total_chars), Style::default().fg(main_color)),
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("errors ", Style::default().fg(sub_color)),
         Span::styled(
-            format!("{}", app.st_incorrect + vis_raw_inc + app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis),
+            format!("{}", app.test.st_incorrect + vis_raw_inc + app.test.st_extra + vis_raw_ext + app.test.st_missed + vis_raw_mis),
             Style::default().fg(main_color)
         ),
     ]);
@@ -267,36 +267,36 @@ fn draw_compact_stats_card(
     let primary = Line::from(vec![
         Span::styled("WPM ", Style::default().fg(sub_color)),
         Span::styled(
-            format!("{:.0}", app.final_wpm),
+            format!("{:.0}", app.test.final_wpm),
             Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD),
         ),
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("Acc ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.2}%", app.final_accuracy), Style::default().fg(main_color)),
+        Span::styled(format!("{:.2}%", app.test.final_accuracy), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(primary).alignment(Alignment::Center), rows[0]);
 
     let secondary = Line::from(vec![
         Span::styled("raw ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}", app.final_raw_wpm), Style::default().fg(main_color)),
+        Span::styled(format!("{:.0}", app.test.final_raw_wpm), Style::default().fg(main_color)),
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("time ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.1}s", app.final_time), Style::default().fg(main_color)),
+        Span::styled(format!("{:.1}s", app.test.final_time), Style::default().fg(main_color)),
         Span::styled("  │  ", Style::default().fg(sub_color)),
         Span::styled("con ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}%", app.final_consistency), Style::default().fg(main_color)),
+        Span::styled(format!("{:.0}%", app.test.final_consistency), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(secondary).alignment(Alignment::Center), rows[1]);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.test.aligned_input, &app.test.display_string, &app.test.display_mask);
 
-    let total_chars = app.st_correct + vis_raw_cor + app.st_incorrect + vis_raw_inc +
-                      app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
-    let errors = app.st_incorrect + vis_raw_inc + app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
+    let total_chars = app.test.st_correct + vis_raw_cor + app.test.st_incorrect + vis_raw_inc +
+                      app.test.st_extra + vis_raw_ext + app.test.st_missed + vis_raw_mis;
+    let errors = app.test.st_incorrect + vis_raw_inc + app.test.st_extra + vis_raw_ext + app.test.st_missed + vis_raw_mis;
 
     let breakdown = Line::from(vec![
-        Span::styled(format!("{}/{}", app.st_correct + vis_raw_cor, total_chars), Style::default().fg(main_color)),
+        Span::styled(format!("{}/{}", app.test.st_correct + vis_raw_cor, total_chars), Style::default().fg(main_color)),
         Span::styled(" correct  │  ", Style::default().fg(sub_color)),
         Span::styled(format!("{}", errors), Style::default().fg(main_color)),
         Span::styled(" errors", Style::default().fg(sub_color)),
@@ -305,20 +305,20 @@ fn draw_compact_stats_card(
 
     let char_detail = Line::from(vec![
         Span::styled("cor ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_correct + vis_raw_cor), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_correct + vis_raw_cor), Style::default().fg(main_color)),
         Span::styled(" │ inc ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_incorrect + vis_raw_inc), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_incorrect + vis_raw_inc), Style::default().fg(main_color)),
         Span::styled(" │ ext ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_extra + vis_raw_ext), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_extra + vis_raw_ext), Style::default().fg(main_color)),
         Span::styled(" │ mis ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_missed + vis_raw_mis), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_missed + vis_raw_mis), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(char_detail).alignment(Alignment::Center), rows[3]);
 
-    let total_ks = app.live_correct_keystrokes + app.live_incorrect_keystrokes;
+    let total_ks = app.test.live_correct_keystrokes + app.test.live_incorrect_keystrokes;
     let ks_line = Line::from(vec![
         Span::styled("keystrokes ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}/{}", app.live_correct_keystrokes, total_ks), Style::default().fg(main_color)),
+        Span::styled(format!("{}/{}", app.test.live_correct_keystrokes, total_ks), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(ks_line).alignment(Alignment::Center), rows[4]);
 }
@@ -340,44 +340,44 @@ fn draw_ultra_compact_stats(
         .split(area);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.test.aligned_input, &app.test.display_string, &app.test.display_mask);
 
-    let total_chars = app.st_correct + vis_raw_cor + app.st_incorrect + vis_raw_inc +
-                      app.st_extra + vis_raw_ext + app.st_missed + vis_raw_mis;
+    let total_chars = app.test.st_correct + vis_raw_cor + app.test.st_incorrect + vis_raw_inc +
+                      app.test.st_extra + vis_raw_ext + app.test.st_missed + vis_raw_mis;
 
     let primary = Line::from(vec![
         Span::styled("wpm ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}", app.final_wpm), Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD)),
+        Span::styled(format!("{:.0}", app.test.final_wpm), Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD)),
         Span::styled(" │ ", Style::default().fg(sub_color)),
         Span::styled("acc ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.1}%", app.final_accuracy), Style::default().fg(main_color)),
+        Span::styled(format!("{:.1}%", app.test.final_accuracy), Style::default().fg(main_color)),
         Span::styled(" │ ", Style::default().fg(sub_color)),
         Span::styled("raw ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}", app.final_raw_wpm), Style::default().fg(main_color)),
+        Span::styled(format!("{:.0}", app.test.final_raw_wpm), Style::default().fg(main_color)),
         Span::styled(" │ ", Style::default().fg(sub_color)),
         Span::styled("con ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}%", app.final_consistency), Style::default().fg(main_color)),
+        Span::styled(format!("{:.0}%", app.test.final_consistency), Style::default().fg(main_color)),
         Span::styled(" │ ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.1}s", app.final_time), Style::default().fg(main_color)),
+        Span::styled(format!("{:.1}s", app.test.final_time), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(primary).alignment(Alignment::Center), rows[0]);
 
     let char_line = Line::from(vec![
-        Span::styled(format!("{}/{}", app.st_correct + vis_raw_cor, total_chars), Style::default().fg(main_color)),
+        Span::styled(format!("{}/{}", app.test.st_correct + vis_raw_cor, total_chars), Style::default().fg(main_color)),
         Span::styled(" cor │ ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_incorrect + vis_raw_inc), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_incorrect + vis_raw_inc), Style::default().fg(main_color)),
         Span::styled(" inc │ ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_extra + vis_raw_ext), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_extra + vis_raw_ext), Style::default().fg(main_color)),
         Span::styled(" ext │ ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_missed + vis_raw_mis), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_missed + vis_raw_mis), Style::default().fg(main_color)),
         Span::styled(" mis", Style::default().fg(sub_color)),
     ]);
     f.render_widget(Paragraph::new(char_line).alignment(Alignment::Center), rows[1]);
 
-    let total_ks = app.live_correct_keystrokes + app.live_incorrect_keystrokes;
+    let total_ks = app.test.live_correct_keystrokes + app.test.live_incorrect_keystrokes;
     let ks_line = Line::from(vec![
         Span::styled("keystroke ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}/{}", app.live_correct_keystrokes, total_ks), Style::default().fg(main_color)),
+        Span::styled(format!("{}/{}", app.test.live_correct_keystrokes, total_ks), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(ks_line).alignment(Alignment::Center), rows[2]);
 }
@@ -399,41 +399,41 @@ fn draw_full_footer(
         .split(area);
 
     let (_, _, vis_raw_cor, vis_raw_inc, vis_raw_ext, vis_raw_mis) =
-        app.calculate_custom_stats_for_slice(&app.aligned_input, &app.display_string, &app.display_mask);
+        app.calculate_custom_stats_for_slice(&app.test.aligned_input, &app.test.display_string, &app.test.display_mask);
 
     let char_detail = Line::from(vec![
         Span::styled("chars: ", Style::default().fg(sub_color)),
         Span::styled("cor ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_correct + vis_raw_cor), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_correct + vis_raw_cor), Style::default().fg(main_color)),
         Span::styled(" │ inc ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_incorrect + vis_raw_inc), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_incorrect + vis_raw_inc), Style::default().fg(main_color)),
         Span::styled(" │ ext ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_extra + vis_raw_ext), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_extra + vis_raw_ext), Style::default().fg(main_color)),
         Span::styled(" │ mis ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.st_missed + vis_raw_mis), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.st_missed + vis_raw_mis), Style::default().fg(main_color)),
     ]);
     f.render_widget(Paragraph::new(char_detail).alignment(Alignment::Center), rows[0]);
 
-    let total_ks = app.live_correct_keystrokes + app.live_incorrect_keystrokes;
+    let total_ks = app.test.live_correct_keystrokes + app.test.live_incorrect_keystrokes;
     let ks_acc = if total_ks > 0 {
-        (app.live_correct_keystrokes as f64 / total_ks as f64) * 100.0
+        (app.test.live_correct_keystrokes as f64 / total_ks as f64) * 100.0
     } else {
         100.0
     };
 
     let keystroke_detail = Line::from(vec![
         Span::styled("keystrokes: ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}", app.live_correct_keystrokes), Style::default().fg(main_color)),
+        Span::styled(format!("{}", app.test.live_correct_keystrokes), Style::default().fg(main_color)),
         Span::styled(" / ", Style::default().fg(sub_color)),
         Span::styled(format!("{}", total_ks), Style::default().fg(main_color)),
         Span::styled(format!(" ({:.1}%)", ks_acc), Style::default().fg(sub_color)),
     ]);
     f.render_widget(Paragraph::new(keystroke_detail).alignment(Alignment::Center), rows[1]);
 
-    if !app.current_quote_source.is_empty() {
+    if !app.test.current_quote_source.is_empty() {
         let source = Line::from(vec![
             Span::styled("source: ", Style::default().fg(sub_color)),
-            Span::styled(&app.current_quote_source, Style::default().fg(main_color)),
+            Span::styled(&app.test.current_quote_source, Style::default().fg(main_color)),
         ]);
         f.render_widget(Paragraph::new(source).alignment(Alignment::Center), rows[2]);
     }
@@ -455,24 +455,24 @@ fn draw_compact_footer(
         ])
         .split(area);
 
-    let total_ks = app.live_correct_keystrokes + app.live_incorrect_keystrokes;
+    let total_ks = app.test.live_correct_keystrokes + app.test.live_incorrect_keystrokes;
     let ks_acc = if total_ks > 0 {
-        (app.live_correct_keystrokes as f64 / total_ks as f64) * 100.0
+        (app.test.live_correct_keystrokes as f64 / total_ks as f64) * 100.0
     } else {
         100.0
     };
 
     let ks_line = Line::from(vec![
         Span::styled("keystrokes ", Style::default().fg(sub_color)),
-        Span::styled(format!("{}/{}", app.live_correct_keystrokes, total_ks), Style::default().fg(main_color)),
+        Span::styled(format!("{}/{}", app.test.live_correct_keystrokes, total_ks), Style::default().fg(main_color)),
         Span::styled(format!(" ({:.1}%)", ks_acc), Style::default().fg(sub_color)),
     ]);
     f.render_widget(Paragraph::new(ks_line).alignment(Alignment::Center), rows[0]);
 
-    if !app.current_quote_source.is_empty() {
+    if !app.test.current_quote_source.is_empty() {
         let source = Line::from(vec![
             Span::styled("― ", Style::default().fg(sub_color)),
-            Span::styled(&app.current_quote_source, Style::default().fg(main_color)),
+            Span::styled(&app.test.current_quote_source, Style::default().fg(main_color)),
         ]);
         f.render_widget(Paragraph::new(source).alignment(Alignment::Center), rows[1]);
     }
@@ -493,10 +493,10 @@ fn draw_ultra_compact_footer(
         ])
         .split(area);
 
-    if !app.current_quote_source.is_empty() {
+    if !app.test.current_quote_source.is_empty() {
         let source = Line::from(vec![
             Span::styled("source: ", Style::default().fg(sub_color)),
-            Span::styled(&app.current_quote_source, Style::default().fg(main_color)),
+            Span::styled(&app.test.current_quote_source, Style::default().fg(main_color)),
         ]);
         f.render_widget(Paragraph::new(source).alignment(Alignment::Center), rows[0]);
     }
@@ -512,7 +512,7 @@ fn draw_chart(
     error_color: ratatui::style::Color,
     show_title: bool,
 ) {
-    if app.wpm_history.is_empty() {
+    if app.test.wpm_history.is_empty() {
         f.render_widget(
             Paragraph::new("no data")
                 .style(Style::default().fg(sub_color))
@@ -557,12 +557,12 @@ fn draw_chart(
     let chart_area = rows[chart_idx];
     let legend_area = rows[legend_idx];
 
-    let filtered_wpm_history: Vec<(f64, f64)> = app.wpm_history.iter()
+    let filtered_wpm_history: Vec<(f64, f64)> = app.test.wpm_history.iter()
         .filter(|(t, _)| *t >= 1.0)
         .copied()
         .collect();
 
-    let filtered_raw_wpm_history: Vec<(f64, f64)> = app.raw_wpm_history.iter()
+    let filtered_raw_wpm_history: Vec<(f64, f64)> = app.test.raw_wpm_history.iter()
         .filter(|(t, _)| *t >= 1.0)
         .copied()
         .collect();
@@ -576,10 +576,10 @@ fn draw_chart(
         .map(|(_, v)| *v).fold(0.0_f64, f64::max);
     let y_max_wpm = (max_wpm * 1.2).max(10.0);
 
-    let max_errors = app.errors_history.iter().map(|(_, e)| *e).fold(0.0_f64, f64::max);
+    let max_errors = app.test.errors_history.iter().map(|(_, e)| *e).fold(0.0_f64, f64::max);
     let y_max_err  = max_errors.max(1.0);
 
-    let scaled_errors: Vec<(f64, f64)> = app.errors_history.iter()
+    let scaled_errors: Vec<(f64, f64)> = app.test.errors_history.iter()
         .filter(|(t, e)| *t >= 1.0 && *e > 0.0)
         .map(|(t, e)| (*t, (e / y_max_err) * y_max_wpm))
         .collect();

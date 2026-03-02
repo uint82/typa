@@ -46,9 +46,9 @@ pub fn render_header(f: &mut Frame, app: &App) {
     let mut header_spans = Vec::new();
     // use 'main' for active brand, 'sub' for inactive
     let brand_color = if app.show_ui {
-        hex_to_rgb(&app.theme.main)
+        hex_to_rgb(&app.config.theme.main)
     } else {
-        hex_to_rgb(&app.theme.sub)
+        hex_to_rgb(&app.config.theme.sub)
     };
 
     header_spans.push(Span::styled(
@@ -60,8 +60,8 @@ pub fn render_header(f: &mut Frame, app: &App) {
 
     if app.show_ui {
         header_spans.push(Span::styled(
-            format!(" | mode: {:?}", app.mode),
-            Style::default().fg(hex_to_rgb(&app.theme.sub)),
+            format!(" | mode: {:?}", app.config.mode),
+            Style::default().fg(hex_to_rgb(&app.config.theme.sub)),
         ));
     }
 
@@ -82,7 +82,7 @@ pub fn render_header(f: &mut Frame, app: &App) {
 pub fn render_footer(f: &mut Frame, app: &App) {
     if app.show_ui {
         let footer = Paragraph::new("tab: restart | esc: quit")
-            .style(Style::default().fg(hex_to_rgb(&app.theme.sub)))
+            .style(Style::default().fg(hex_to_rgb(&app.config.theme.sub)))
             .alignment(Alignment::Center);
         f.render_widget(footer, Rect::new(0, f.area().height - 1, f.area().width, 1));
     }

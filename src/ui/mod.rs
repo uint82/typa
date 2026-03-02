@@ -12,13 +12,13 @@ use ratatui::{
 };
 
 pub fn render(f: &mut Frame, app: &App) {
-    let bg_color = hex_to_rgb(&app.theme.bg);
+    let bg_color = hex_to_rgb(&app.config.theme.bg);
     f.render_widget(
         Block::default().style(Style::default().bg(bg_color)),
         f.area(),
     );
 
-    if app.state == AppState::Finished {
+    if app.test.state == AppState::Finished {
         results::draw(f, app);
     } else {
         test::draw(f, app);
