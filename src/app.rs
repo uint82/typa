@@ -78,6 +78,8 @@ pub struct TestState {
     pub original_quote_length: usize,
     pub next_word_index: usize,
 
+    pub is_new_best: bool,
+
     pub wpm_history: Vec<(f64, f64)>,
     pub raw_wpm_history: Vec<(f64, f64)>,
     pub errors_history: Vec<(f64, f64)>,
@@ -125,6 +127,7 @@ impl Default for TestState {
             total_quote_words: 0,
             original_quote_length: 0,
             next_word_index: 0,
+            is_new_best: false,
             wpm_history: Vec::new(),
             raw_wpm_history: Vec::new(),
             errors_history: Vec::new(),
@@ -275,6 +278,7 @@ impl App {
 
         self.test.final_consistency = self.calculate_consistency();
 
+        self.check_personal_best();
         let _ = history::record_test(self, true);
     }
 
@@ -547,6 +551,37 @@ impl App {
             self.test.st_extra     + vis_ext,
             self.test.st_missed    + vis_mis,
         )
+    }
+
+    fn check_personal_best(&mut self) {
+        let (mode_str, mode_value) = match &self.config.mode {
+            Mode::Time(t)  => ("time".to_string(),  t.to_string()),
+            Mode::Words(w) => ("words".to_string(), w.to_string()),
+            Mode::Quote(q) => {
+                use crate::models::QuoteSelector;
+                use crate::ui::utils::get_quote_length_category;
+                let label = match q {
+                    QuoteSelector::Id(_) => get_quote_length_category(self.test.original_quote_length).to_string(),
+                    QuoteSelector::Category(len) => {
+                        let s = format!("{:?}", len).to_lowercase();
+                        if s == "all" {
+                            get_quote_length_category(self.test.original_quote_length).to_string()
+                        } else {
+                            s
+                        }
+                    }
+                };
+                ("quote".to_string(), label)
+            }
+        };
+
+        if let Ok(records) = history::load_history() {
+            let prev_best = records.iter()
+                .filter(|r| r.completed && r.mode == mode_str && r.mode_value == mode_value)
+                .filter_map(|r| r.wpm)
+                .fold(0.0_f64, f64::max);
+            self.test.is_new_best = self.test.final_wpm > prev_best;
+        }
     }
 
     fn calculate_consistency(&self) -> f64 {

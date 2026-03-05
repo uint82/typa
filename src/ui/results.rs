@@ -185,7 +185,7 @@ fn draw_full_stats_card(
         rows[0]
     );
 
-    let wpm_line = Line::from(vec![
+    let mut wpm_line = Line::from(vec![
         Span::styled("  WPM: ", Style::default().fg(sub_color)),
         Span::styled(
             format!("{:.0}", app.test.final_wpm),
@@ -194,6 +194,9 @@ fn draw_full_stats_card(
                 .add_modifier(ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED),
         ),
     ]);
+    if app.test.is_new_best {
+        wpm_line.spans.push(Span::styled("  ↑ new best!", Style::default().fg(main_color)));
+    }
     f.render_widget(Paragraph::new(wpm_line).alignment(Alignment::Center), rows[1]);
 
     let acc_line = Line::from(vec![
@@ -264,16 +267,24 @@ fn draw_compact_stats_card(
         ])
         .split(area);
 
-    let primary = Line::from(vec![
-        Span::styled("WPM ", Style::default().fg(sub_color)),
-        Span::styled(
-            format!("{:.0}", app.test.final_wpm),
-            Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD),
-        ),
-        Span::styled("  │  ", Style::default().fg(sub_color)),
-        Span::styled("Acc ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.2}%", app.test.final_accuracy), Style::default().fg(main_color)),
-    ]);
+    let primary = Line::from({
+        let mut spans = vec![
+            Span::styled("WPM ", Style::default().fg(sub_color)),
+            Span::styled(
+                format!("{:.0}", app.test.final_wpm),
+                Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD),
+            ),
+        ];
+        if app.test.is_new_best {
+            spans.push(Span::styled("  ↑ new best!", Style::default().fg(main_color)));
+        }
+        spans.extend([
+            Span::styled("  │  ", Style::default().fg(sub_color)),
+            Span::styled("Acc ", Style::default().fg(sub_color)),
+            Span::styled(format!("{:.2}%", app.test.final_accuracy), Style::default().fg(main_color)),
+        ]);
+        spans
+    });
     f.render_widget(Paragraph::new(primary).alignment(Alignment::Center), rows[0]);
 
     let secondary = Line::from(vec![
@@ -345,21 +356,29 @@ fn draw_ultra_compact_stats(
     let total_chars = app.test.st_correct + vis_raw_cor + app.test.st_incorrect + vis_raw_inc +
                       app.test.st_extra + vis_raw_ext + app.test.st_missed + vis_raw_mis;
 
-    let primary = Line::from(vec![
-        Span::styled("wpm ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}", app.test.final_wpm), Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD)),
-        Span::styled(" │ ", Style::default().fg(sub_color)),
-        Span::styled("acc ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.1}%", app.test.final_accuracy), Style::default().fg(main_color)),
-        Span::styled(" │ ", Style::default().fg(sub_color)),
-        Span::styled("raw ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}", app.test.final_raw_wpm), Style::default().fg(main_color)),
-        Span::styled(" │ ", Style::default().fg(sub_color)),
-        Span::styled("con ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.0}%", app.test.final_consistency), Style::default().fg(main_color)),
-        Span::styled(" │ ", Style::default().fg(sub_color)),
-        Span::styled(format!("{:.1}s", app.test.final_time), Style::default().fg(main_color)),
-    ]);
+    let primary = Line::from({
+        let mut spans = vec![
+            Span::styled("wpm ", Style::default().fg(sub_color)),
+            Span::styled(format!("{:.0}", app.test.final_wpm), Style::default().fg(main_color).add_modifier(ratatui::style::Modifier::BOLD)),
+        ];
+        if app.test.is_new_best {
+            spans.push(Span::styled("  ↑ new best!", Style::default().fg(main_color)));
+        }
+        spans.extend([
+            Span::styled(" │ ", Style::default().fg(sub_color)),
+            Span::styled("acc ", Style::default().fg(sub_color)),
+            Span::styled(format!("{:.1}%", app.test.final_accuracy), Style::default().fg(main_color)),
+            Span::styled(" │ ", Style::default().fg(sub_color)),
+            Span::styled("raw ", Style::default().fg(sub_color)),
+            Span::styled(format!("{:.0}", app.test.final_raw_wpm), Style::default().fg(main_color)),
+            Span::styled(" │ ", Style::default().fg(sub_color)),
+            Span::styled("con ", Style::default().fg(sub_color)),
+            Span::styled(format!("{:.0}%", app.test.final_consistency), Style::default().fg(main_color)),
+            Span::styled(" │ ", Style::default().fg(sub_color)),
+            Span::styled(format!("{:.1}s", app.test.final_time), Style::default().fg(main_color)),
+        ]);
+        spans
+    });
     f.render_widget(Paragraph::new(primary).alignment(Alignment::Center), rows[0]);
 
     let char_line = Line::from(vec![
