@@ -70,6 +70,10 @@ struct Cli {
     #[arg(long, default_value_t = false, help_heading = "Flags")]
     stats: bool,
 
+    /// Delete all saved history (will prompt for confirmation)
+    #[arg(long, default_value_t = false, help_heading = "Flags")]
+    clear_history: bool,
+
     /// Print help
     #[arg(short, long, action = ArgAction::Help, help_heading = "Flags")]
     help: Option<bool>,
@@ -93,6 +97,21 @@ fn main() -> Result<()> {
             theme: config::Theme::default(),
         }
     });
+
+    if cli.clear_history {
+        use std::io::{BufRead, Write};
+        print!("  delete all history? this cannot be undone. [y/N] ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().lock().read_line(&mut input)?;
+        if input.trim().eq_ignore_ascii_case("y") {
+            history::clear_history()?;
+            println!("  history cleared.");
+        } else {
+            println!("  cancelled.");
+        }
+        return Ok(());
+    }
 
     if cli.stats {
         history::run(app_config.theme)?;

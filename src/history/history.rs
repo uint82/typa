@@ -83,6 +83,16 @@ pub fn load_history() -> Result<Vec<TestRecord>> {
 
 
 
+pub fn clear_history() -> Result<()> {
+    let Some(path) = history_path() else {
+        return Ok(());
+    };
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    Ok(())
+}
+
 pub fn record_test(app: &App, completed: bool) -> Result<()> {
     let duration_secs = app.test.start_time
         .map(|t| t.elapsed().as_secs_f64())

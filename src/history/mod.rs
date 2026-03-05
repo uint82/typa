@@ -3,7 +3,7 @@ mod draw;
 mod stats;
 pub mod history;
 
-pub use history::{load_history, record_test, TestRecord};
+pub use history::{clear_history, load_history, record_test, TestRecord};
 
 use crate::config::Theme;
 use crate::ui::utils::hex_to_rgb;
