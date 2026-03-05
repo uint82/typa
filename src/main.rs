@@ -26,7 +26,7 @@ use std::io;
 #[command(name = "typa")]
 #[command(version)]
 #[command(about = "A rusty terminal typing test", long_about = None)]
-// disable the default flags so i can customize them manually below
+// disable the default flags so we can customize them manually below
 #[command(disable_help_flag = true)]
 #[command(disable_version_flag = true)]
 #[command(help_template = "\
@@ -42,7 +42,6 @@ use std::io;
         .args(&["time", "words", "quote"])
 ))]
 struct Cli {
-    // these stay under the default "Options" heading
     /// Time mode: Custom duration in seconds (e.g. 15, 60, 120, 3600)
     #[arg(short, long, value_parser = RangedU64ValueParser::<u64>::new().range(1..))]
     time: Option<u64>,
@@ -59,7 +58,6 @@ struct Cli {
     #[arg(short, long, default_value = "english")]
     language: String,
 
-    // explicitly move these to a "Flags" heading
     /// Include numbers in the test
     #[arg(short, long, default_value_t = false, help_heading = "Flags")]
     numbers: bool,
@@ -68,9 +66,9 @@ struct Cli {
     #[arg(short, long, default_value_t = false, help_heading = "Flags")]
     punctuation: bool,
 
-    /// Show typing test history
+    /// Show interactive typing stats and history
     #[arg(long, default_value_t = false, help_heading = "Flags")]
-    history: bool,
+    stats: bool,
 
     /// Print help
     #[arg(short, long, action = ArgAction::Help, help_heading = "Flags")]
@@ -84,22 +82,22 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if cli.history {
-        history::show_history()?;
-        return Ok(());
-    }
-
+    // load config early so the history canvas can use the user's theme
     let app_config = AppConfig::load().unwrap_or_else(|e| {
         eprintln!(
             "Warning: Failed to load config, using defaults. Error: {}",
             e
         );
-        // return a default instance if file loading completely crashes
-        // (though load() handles missing files gracefully, this catches format errors)
+        // load() handles missing files gracefully — this catches format errors
         AppConfig {
             theme: config::Theme::default(),
         }
     });
+
+    if cli.stats {
+        history::run(app_config.theme)?;
+        return Ok(());
+    }
 
     let initial_mode = if let Some(t) = cli.time {
         Mode::Time(t)
