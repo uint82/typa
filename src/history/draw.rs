@@ -70,16 +70,18 @@ pub(crate) fn draw(f: &mut Frame, canvas: &Canvas) {
 
     match canvas.view {
         View::Stats   => draw_stats(f, canvas, content_area, &p),
-        View::History | View::Detail => {
+        View::History | View::Detail | View::Help => {
             draw_history(f, canvas, content_area, &p);
             if canvas.view == View::Detail {
                 draw_detail_modal(f, canvas, f.area(), &p);
             }
+            if canvas.view == View::Help {
+                draw_help_modal(f, f.area(), &p);
+            }
         }
     }
 
-    let stats_overflows = canvas.stats_content_lines > canvas.content_height() as usize;
-    draw_footer(f, footer_area, &canvas.view, stats_overflows, &p);
+    draw_footer(f, footer_area, &canvas.view, &p);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
@@ -89,9 +91,9 @@ fn draw_header(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
         .split(area);
 
     let subtitle = match view {
-        View::Stats            => "  stats",
-        View::History
-        | View::Detail         => "  history",
+        View::Stats => "  stats",
+        View::History | View::Detail
+        | View::Help => "  history",
     };
     let title = Line::from(vec![
         Span::styled("typa", Style::default().fg(p.main).add_modifier(Modifier::BOLD)),
@@ -112,7 +114,7 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
             Style::default().fg(p.main).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             Style::default().fg(p.sub),
         ),
-        View::History | View::Detail => (
+        View::History | View::Detail | View::Help => (
             Style::default().fg(p.sub),
             Style::default().fg(p.main).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         ),
@@ -126,42 +128,24 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-fn draw_footer(f: &mut Frame, area: Rect, view: &View, stats_overflows: bool, p: &Palette) {
-    let dim = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
+fn draw_footer(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
+    let key = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
+    let lbl = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
+    let sep = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
+    let dot = Span::styled("  •  ", sep);
+
     let mut spans = vec![
-        Span::styled("tab", Style::default().fg(p.sub)),
-        Span::styled("  switch  ", dim),
+        Span::styled("tab",   key), Span::styled(" switch", lbl), dot.clone(),
+        Span::styled("enter", key), Span::styled(" open",   lbl), dot.clone(),
+        Span::styled("jk/↑↓", key), Span::styled(" move",   lbl), dot.clone(),
+        Span::styled("q",     key), Span::styled(" quit",   lbl),
     ];
 
-    match view {
-        View::Stats if stats_overflows => {
-            spans.extend([
-                Span::styled("↑↓  jk", Style::default().fg(p.sub)),
-                Span::styled("  scroll  ", dim),
-            ]);
-        }
-        View::History => {
-            spans.extend([
-                Span::styled("↑↓  jk", Style::default().fg(p.sub)),
-                Span::styled("  navigate  ", dim),
-                Span::styled("enter", Style::default().fg(p.sub)),
-                Span::styled("  detail  ", dim),
-            ]);
-        }
-        View::Detail => {
-            spans.extend([
-                Span::styled("esc", Style::default().fg(p.sub)),
-                Span::styled("  back  ", dim),
-            ]);
-        }
-        _ => {}
+    if matches!(view, View::History | View::Help) {
+        spans.push(dot.clone());
+        spans.push(Span::styled("?",    key));
+        spans.push(Span::styled(" help", lbl));
     }
-
-    let quit_label = if matches!(view, View::Detail) { "close" } else { "quit" };
-    spans.extend([
-        Span::styled("q  esc", Style::default().fg(p.sub)),
-        Span::styled(format!("  {}", quit_label), dim),
-    ]);
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
@@ -552,6 +536,98 @@ fn draw_trend_chart(
     f.render_widget(chart, body_rows[1]);
 }
 
+fn draw_help_modal(f: &mut Frame, area: Rect, p: &Palette) {
+    let key = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
+    let lbl = Style::default().fg(p.sub);
+    let dim = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
+
+    let nav_title = "navigation";
+    let nav_rows = [
+        ("j / ↓",   "move down"),
+        ("k / ↑",   "move up"),
+        ("ctrl+d",  "half page down"),
+        ("ctrl+u",  "half page up"),
+        ("gg",      "jump to top"),
+        ("G",       "jump to bottom"),
+    ];
+
+    let act_title = "actions";
+    let act_rows = [
+        ("enter",   "open detail"),
+        ("tab",     "switch view"),
+        ("?",       "toggle help"),
+        ("q / esc", "quit / close"),
+    ];
+
+    let key_w: usize = 10;
+    let val_w: usize = 18;
+    let inner_w = (key_w + val_w + 3) as u16;
+    let total_rows = 1 + (2 + nav_rows.len()) + 1 + (2 + act_rows.len());
+    let inner_h = total_rows as u16;
+    let modal_w = (inner_w + 4).min(area.width.saturating_sub(4));
+    let modal_h = (inner_h + 4).min(area.height.saturating_sub(2));
+    let modal_x = area.x + (area.width.saturating_sub(modal_w)) / 2;
+    let modal_y = area.y + (area.height.saturating_sub(modal_h)) / 2;
+    let modal_area = Rect::new(modal_x, modal_y, modal_w, modal_h);
+
+    f.render_widget(Clear, modal_area);
+    f.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(p.main))
+            .style(Style::default().bg(p.bg)),
+        modal_area,
+    );
+
+    let inner = Rect::new(
+        modal_area.x + 2,
+        modal_area.y + 1,
+        modal_area.width.saturating_sub(4),
+        modal_area.height.saturating_sub(2),
+    );
+
+    let mut y = inner.y;
+
+    // modal title
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("keybindings", Style::default().fg(p.main).add_modifier(Modifier::BOLD)),
+        ])).alignment(Alignment::Center),
+        Rect::new(inner.x, y, inner.width, 1),
+    );
+    y += 1;
+
+    let mut draw_section = |y: &mut u16, title: &str, rows: &[(&str, &str)]| {
+        if *y >= inner.y + inner.height { return; }
+        f.render_widget(
+            Paragraph::new(Line::from(vec![Span::styled(title.to_string(), dim)])),
+            Rect::new(inner.x, *y, inner.width, 1),
+        );
+        *y += 1;
+        if *y >= inner.y + inner.height { return; }
+        f.render_widget(
+            Paragraph::new("─".repeat(inner.width as usize)).style(dim),
+            Rect::new(inner.x, *y, inner.width, 1),
+        );
+        *y += 1;
+        for (k, v) in rows {
+            if *y >= inner.y + inner.height { return; }
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(format!("{:<w$}", k, w = key_w), key),
+                    Span::styled(*v, lbl),
+                ])),
+                Rect::new(inner.x, *y, inner.width, 1),
+            );
+            *y += 1;
+        }
+    };
+
+    draw_section(&mut y, nav_title, &nav_rows[..]);
+    y += 1; // gap between sections
+    draw_section(&mut y, act_title, &act_rows[..]);
+}
+
 fn draw_detail_modal(f: &mut Frame, canvas: &Canvas, area: Rect, p: &Palette) {
     let Some(cache) = &canvas.detail_cache else { return; };
     let test_num = cache.test_num;
@@ -647,7 +723,7 @@ fn draw_table_header(f: &mut Frame, area: Rect, cols: &ColumnLayout, p: &Palette
     if cols.show_con  { spans.push(Span::styled(format!("{:<w$}", "con",  w = cols.w_con),  Style::default().fg(p.sub))); }
     if cols.show_time { spans.push(Span::styled(format!("{:<w$}", "time", w = cols.w_time), Style::default().fg(p.sub))); }
     if cols.show_char { spans.push(Span::styled(format!("{:<w$}", "char", w = cols.w_char), Style::default().fg(p.sub))); }
-    spans.push(Span::styled("done", Style::default().fg(p.sub)));
+    spans.push(Span::styled(format!("{:<w$}", "done", w = cols.w_done), Style::default().fg(p.sub)));
 
     f.render_widget(Paragraph::new(Line::from(spans)), sections[0]);
 
@@ -666,7 +742,6 @@ fn draw_table_rows(
     p: &Palette,
 ) {
     let visible = rows_area.height as usize;
-    let total   = canvas.records.len();
 
     // set here so Canvas::visible_rows() can read it back. the only source of truth.
     canvas.rendered_rows.set(visible);
@@ -700,13 +775,9 @@ fn draw_table_rows(
         if cols.show_con  { spans.push(Span::styled(format!("{:<w$}", row.con,  w = cols.w_con),  Style::default().fg(fg))); }
         if cols.show_time { spans.push(Span::styled(format!("{:<w$}", row.time, w = cols.w_time), Style::default().fg(fg))); }
         if cols.show_char { spans.push(Span::styled(format!("{:<w$}", row.char_stats, w = cols.w_char), Style::default().fg(fg))); }
-        spans.push(Span::styled(row.done, Style::default().fg(fg)));
+        spans.push(Span::styled(format!("{:<w$}", row.done, w = cols.w_done), Style::default().fg(fg)));
 
         f.render_widget(Paragraph::new(Line::from(spans)), row_area);
-    }
-
-    if total > visible {
-        draw_scrollbar(f, rows_area, total, canvas.scroll_offset, p);
     }
 }
 

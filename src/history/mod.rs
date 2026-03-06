@@ -30,6 +30,7 @@ pub(crate) enum View {
     Stats,
     History,
     Detail,
+    Help,
 }
 
 pub(crate) struct Canvas {
@@ -59,6 +60,7 @@ pub(crate) struct Canvas {
     pub(crate) stats_scroll: usize,
     pub(crate) stats_content_lines: usize,
     pub(crate) palette: Palette,
+    pending_g: bool,
 }
 
 impl Canvas {
@@ -109,6 +111,7 @@ impl Canvas {
             stats_scroll: 0,
             stats_content_lines,
             palette,
+            pending_g: false,
         })
     }
 
@@ -141,9 +144,9 @@ impl Canvas {
 
     fn switch_view(&mut self) {
         self.view = match self.view {
-            View::Stats   => View::History,
-            View::History => View::Stats,
-            View::Detail  => View::History, // close modal, land on history. don't jump to stats.
+            View::Stats              => View::History,
+            View::History            => View::Stats,
+            View::Detail | View::Help => View::History,
         };
     }
 
@@ -216,8 +219,46 @@ impl Canvas {
         self.stats_scroll = self.stats_scroll.saturating_sub(1);
     }
 
+    fn jump_to_top(&mut self) {
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+
+    fn jump_to_bottom(&mut self) {
+        let last = self.records.len().saturating_sub(1);
+        self.selected = last;
+        let vis = self.visible_rows().max(1);
+        self.scroll_offset = last.saturating_sub(vis - 1);
+    }
+
+    fn half_page_down(&mut self) {
+        let vis  = self.visible_rows().max(2);
+        let half = vis / 2;
+        let last = self.records.len().saturating_sub(1);
+        self.selected = (self.selected + half).min(last);
+        let ideal_offset = self.selected.saturating_sub(vis / 2);
+        let max_offset   = last.saturating_sub(vis - 1);
+        self.scroll_offset = ideal_offset.min(max_offset);
+    }
+
+    fn half_page_up(&mut self) {
+        let vis  = self.visible_rows().max(2);
+        let half = vis / 2;
+        self.selected = self.selected.saturating_sub(half);
+        self.scroll_offset = self.selected.saturating_sub(vis / 2);
+    }
+
     fn quit(&mut self) {
         self.should_quit = true;
+    }
+
+    fn open_help(&mut self) {
+        self.pending_g = false;
+        self.view = View::Help;
+    }
+
+    fn close_help(&mut self) {
+        self.view = View::History;
     }
 }
 
@@ -262,11 +303,12 @@ fn run_loop(
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     match key.code {
-                        // q/esc dismisses the detail modal first; only quits if no modal is open.
                         KeyCode::Char('q')
                         | KeyCode::Char('\x1b')
                         | KeyCode::Esc => {
-                            if canvas.view == View::Detail {
+                            if canvas.view == View::Help {
+                                canvas.close_help();
+                            } else if canvas.view == View::Detail {
                                 canvas.close_detail();
                             } else {
                                 canvas.quit();
@@ -280,19 +322,45 @@ fn run_loop(
                         KeyCode::Tab
                         | KeyCode::Char('1')
                         | KeyCode::Char('2') => canvas.switch_view(),
-                        KeyCode::Enter
-                            if canvas.view == View::History => canvas.open_detail(),
+                        KeyCode::Enter if canvas.view == View::History => canvas.open_detail(),
+                        KeyCode::Char('?') if canvas.view == View::History => canvas.open_help(),
                         KeyCode::Down | KeyCode::Char('j') => match canvas.view {
                             View::History => canvas.move_down(),
                             View::Stats   => canvas.stats_scroll_down(),
-                            View::Detail  => {}
+                            View::Detail | View::Help => {}
                         },
                         KeyCode::Up | KeyCode::Char('k') => match canvas.view {
                             View::History => canvas.move_up(),
                             View::Stats   => canvas.stats_scroll_up(),
-                            View::Detail  => {}
+                            View::Detail | View::Help => {}
                         },
-                        _ => {}
+                        KeyCode::Char('G') if canvas.view == View::History => {
+                            canvas.pending_g = false;
+                            canvas.jump_to_bottom();
+                        }
+                        KeyCode::Char('g') if canvas.view == View::History => {
+                            if canvas.pending_g {
+                                canvas.pending_g = false;
+                                canvas.jump_to_top();
+                            } else {
+                                canvas.pending_g = true;
+                            }
+                        }
+                        KeyCode::Char('d')
+                            if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && canvas.view == View::History =>
+                        {
+                            canvas.pending_g = false;
+                            canvas.half_page_down();
+                        }
+                        KeyCode::Char('u')
+                            if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && canvas.view == View::History =>
+                        {
+                            canvas.pending_g = false;
+                            canvas.half_page_up();
+                        }
+                        _ => { canvas.pending_g = false; }
                     }
                 }
                 Event::Resize(w, h) => canvas.resize(w, h),

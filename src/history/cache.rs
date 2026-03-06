@@ -159,6 +159,7 @@ pub(crate) struct ColumnLayout {
     pub(crate) show_con:  bool, pub(crate) w_con:  usize,
     pub(crate) show_time: bool, pub(crate) w_time: usize,
     pub(crate) show_char: bool, pub(crate) w_char: usize,
+    pub(crate) w_done: usize,
 }
 
 // ColWidthCache exists so this function never has to touch records. keep it that way.
@@ -178,7 +179,9 @@ pub(crate) fn compute_columns(content_w: usize, cwc: &ColWidthCache) -> ColumnLa
     let mut w_mode = cwc.max_mode_len + 3;
     let mut w_lang = cwc.max_lang_len + 3;
 
-    let mut used = w_sel + w_num + w_date + w_wpm + w_acc;
+    let w_done = 5usize; // "done" header + 1 pad
+
+    let mut used = w_sel + w_num + w_date + w_wpm + w_acc + w_done;
 
     let show_mode = content_w >= used + w_mode; if show_mode { used += w_mode; }
     let show_lang = content_w >= used + w_lang; if show_lang { used += w_lang; }
@@ -220,6 +223,7 @@ pub(crate) fn compute_columns(content_w: usize, cwc: &ColWidthCache) -> ColumnLa
         show_con,  w_con,
         show_time, w_time,
         show_char, w_char,
+        w_done,
     }
 }
 
