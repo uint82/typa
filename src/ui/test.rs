@@ -1,5 +1,6 @@
 use crate::app::App;
 use crate::models::Mode;
+use crate::models::AppState;
 use crate::ui::utils::{format_timer, hex_to_rgb, render_header, render_footer};
 use crate::utils::strings;
 use ratatui::{
@@ -83,6 +84,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         inner_chunks[0],
     );
 
+    let elapsed_ms = app.test.caret_epoch.elapsed().as_millis();
+    const BLINK_PERIOD_MS: u128 = 530;
+
+    let caret_visible = app.test.state == AppState::Running
+        || (elapsed_ms / BLINK_PERIOD_MS) % 2 == 0;
+
     let mut visible_lines: Vec<Line> = Vec::new();
     let lines_to_show = app.test.visual_lines.iter().take(3);
 
@@ -143,14 +150,18 @@ pub fn draw(f: &mut Frame, app: &App) {
 
                 spans.push(Span::styled(
                     c.to_string(),
-                    Style::default().bg(color_cursor_bg).fg(color_cursor_fg),
+                    if caret_visible {
+                        Style::default().bg(color_cursor_bg).fg(color_cursor_fg)
+                    } else {
+                        Style::default().fg(color_future)
+                    },
                 ));
             } else {
                 spans.push(Span::styled(c.to_string(), Style::default().fg(color_future)));
             }
         }
         let line_end_idx = global_char_idx + line_str.chars().count();
-        if input_chars.len() == line_end_idx {
+        if input_chars.len() == line_end_idx && caret_visible {
             spans.push(Span::styled(
                 " ",
                 Style::default().bg(color_cursor_bg),

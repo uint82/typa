@@ -80,6 +80,9 @@ pub struct TestState {
 
     pub is_new_best: bool,
 
+    /// reset on every new test so the blink phase always starts visible.
+    pub caret_epoch: Instant,
+
     // append-only record of every word ever in the stream, including scrolled-off ones.
     // word_stream_string is trimmed on scroll so it can't be used for retry.
     pub cumulative_words: Vec<String>,
@@ -132,6 +135,7 @@ impl Default for TestState {
             original_quote_length: 0,
             next_word_index: 0,
             is_new_best: false,
+            caret_epoch: Instant::now(),
             cumulative_words: Vec::new(),
             wpm_history: Vec::new(),
             raw_wpm_history: Vec::new(),
