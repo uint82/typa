@@ -80,6 +80,10 @@ pub struct TestState {
 
     pub is_new_best: bool,
 
+    // append-only record of every word ever in the stream, including scrolled-off ones.
+    // word_stream_string is trimmed on scroll so it can't be used for retry.
+    pub cumulative_words: Vec<String>,
+
     pub wpm_history: Vec<(f64, f64)>,
     pub raw_wpm_history: Vec<(f64, f64)>,
     pub errors_history: Vec<(f64, f64)>,
@@ -128,6 +132,7 @@ impl Default for TestState {
             original_quote_length: 0,
             next_word_index: 0,
             is_new_best: false,
+            cumulative_words: Vec::new(),
             wpm_history: Vec::new(),
             raw_wpm_history: Vec::new(),
             errors_history: Vec::new(),
@@ -141,6 +146,7 @@ pub struct App {
     pub should_quit: bool,
     pub show_ui: bool,
     pub terminal_width: u16,
+    pub last_test_words: Option<Vec<String>>,
 
     pub config: SessionConfig,
     pub test: TestState,
@@ -190,6 +196,7 @@ impl App {
             should_quit: false,
             show_ui: true,
             terminal_width: 80,
+            last_test_words: None,
             config,
             test: TestState::default(),
         };
@@ -220,9 +227,54 @@ impl App {
         if self.test.state == AppState::Running {
             let _ = history::record_test(self, false);
         }
+        if !self.test.cumulative_words.is_empty() {
+            self.last_test_words = Some(self.test.cumulative_words.clone());
+        }
         self.test = TestState::default();
         self.show_ui = true;
         self.generate_initial_words();
+    }
+
+    pub fn retry_last_test(&mut self) {
+        let words = match self.last_test_words.clone() {
+            Some(w) if !w.is_empty() => w,
+            // if no previous test yet, fall back to a normal restart
+            _ => { self.restart_test(); return; }
+        };
+        if self.test.state == AppState::Running {
+            let _ = history::record_test(self, false);
+        }
+        self.test = TestState::default();
+        self.show_ui = true;
+        self.seed_from_word_list(words);
+    }
+
+    fn seed_from_word_list(&mut self, words: Vec<String>) {
+        use crate::models::WordState;
+        let total = words.len();
+        let word_stream: Vec<Word> = words.iter().enumerate().map(|(i, text)| {
+            let mut w = Word::new(text.clone(), i);
+            if i == 0 { w.state = WordState::Active; }
+            w
+        }).collect();
+
+        self.test.word_stream      = word_stream;
+        self.test.generated_count  = total;
+        self.test.next_word_index  = total;
+        self.test.cumulative_words = words;
+
+        if matches!(self.config.mode, Mode::Quote(_)) {
+            self.test.total_quote_words = total;
+        }
+
+        self.update_stream_string();
+        self.sync_display_text();
+
+        if matches!(self.config.mode, Mode::Quote(_)) {
+            self.test.original_quote_length = self.test.word_stream_string.chars().count();
+        }
+
+        self.recalculate_lines();
     }
 
     pub fn check_time(&mut self) {
@@ -279,6 +331,9 @@ impl App {
         self.test.final_consistency = self.calculate_consistency();
 
         self.check_personal_best();
+        if !self.test.cumulative_words.is_empty() {
+            self.last_test_words = Some(self.test.cumulative_words.clone());
+        }
         let _ = history::record_test(self, true);
     }
 
@@ -631,6 +686,7 @@ impl App {
         self.test.current_quote_source = result.current_quote_source;
         self.test.generated_count      = result.generated_count;
         self.test.next_word_index      = result.next_index;
+        self.test.cumulative_words     = self.test.word_stream.iter().map(|w| w.text.clone()).collect();
         self.update_stream_string();
         self.sync_display_text();
 
@@ -648,6 +704,7 @@ impl App {
             self.test.next_word_index,
         ) {
             self.test.word_stream.extend(new_words.iter().cloned());
+            self.test.cumulative_words.extend(new_words.iter().map(|w| w.text.clone()));
             self.test.next_word_index = new_next_index;
             if matches!(self.config.mode, Mode::Words(_)) {
                 self.test.generated_count += new_words.len();

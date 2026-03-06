@@ -190,6 +190,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                 app.quit()
                             }
                             KeyCode::Tab => app.restart_test(),
+                            KeyCode::Char('r') if app.test.state == models::AppState::Finished => app.retry_last_test(),
                             KeyCode::Char(c) => app.on_key(c),
                             KeyCode::Backspace => app.on_backspace(),
                             _ => {}

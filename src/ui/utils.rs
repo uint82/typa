@@ -81,7 +81,13 @@ pub fn render_header(f: &mut Frame, app: &App) {
 
 pub fn render_footer(f: &mut Frame, app: &App) {
     if app.show_ui {
-        let footer = Paragraph::new("tab: restart | esc: quit")
+        use crate::models::AppState;
+        let text = if app.test.state == AppState::Finished {
+            "tab: next test  |  r: retry same words  |  esc: quit"
+        } else {
+            "tab: restart  |  esc: quit"
+        };
+        let footer = Paragraph::new(text)
             .style(Style::default().fg(hex_to_rgb(&app.config.theme.sub)))
             .alignment(Alignment::Center);
         f.render_widget(footer, Rect::new(0, f.area().height - 1, f.area().width, 1));
