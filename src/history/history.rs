@@ -83,6 +83,30 @@ pub fn load_history() -> Result<Vec<TestRecord>> {
 
 
 
+pub fn delete_record(index_newest_first: usize, total: usize) -> Result<()> {
+    let Some(path) = history_path() else { return Ok(()); };
+    if !path.exists() { return Ok(()); }
+
+    let file_index = total - 1 - index_newest_first;
+
+    let raw = fs::read_to_string(&path)?;
+    let lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
+    if file_index >= lines.len() { return Ok(()); }
+
+    let tmp_path = path.with_extension("tmp");
+    {
+        let mut f = fs::File::create(&tmp_path)?;
+        for (i, line) in lines.iter().enumerate() {
+            if i != file_index {
+                writeln!(f, "{}", line)?;
+            }
+        }
+        f.flush()?;
+    }
+    fs::rename(&tmp_path, &path)?;
+    Ok(())
+}
+
 pub fn clear_history() -> Result<()> {
     let Some(path) = history_path() else {
         return Ok(());

@@ -3,7 +3,7 @@ mod draw;
 mod stats;
 pub mod history;
 
-pub use history::{clear_history, load_history, record_test, TestRecord};
+pub use history::{clear_history, delete_record, load_history, record_test, TestRecord};
 
 use crate::config::Theme;
 use crate::ui::utils::hex_to_rgb;
@@ -61,6 +61,7 @@ pub(crate) struct Canvas {
     pub(crate) stats_content_lines: usize,
     pub(crate) palette: Palette,
     pending_g: bool,
+    pub(crate) pending_delete: bool,
 }
 
 impl Canvas {
@@ -112,6 +113,7 @@ impl Canvas {
             stats_content_lines,
             palette,
             pending_g: false,
+            pending_delete: false,
         })
     }
 
@@ -260,6 +262,43 @@ impl Canvas {
     fn close_help(&mut self) {
         self.view = View::History;
     }
+
+    fn confirm_delete(&mut self) {
+        let idx   = self.selected;
+        let total = self.records.len();
+
+        if let Err(e) = delete_record(idx, total) {
+            let _ = e;
+            return;
+        }
+
+        self.records.remove(idx);
+
+        if !self.records.is_empty() {
+            self.selected = self.selected.min(self.records.len() - 1);
+        } else {
+            self.selected = 0;
+        }
+
+        self.row_cache          = build_row_cache(&self.records);
+        self.col_width_cache    = build_col_width_cache(&self.records);
+        self.cols               = compute_columns(self.cols_w, &self.col_width_cache);
+        self.record_dates       = self.records.iter()
+            .map(|r| local_datetime(&r.timestamp))
+            .collect();
+        let (wpm, acc, ymax, trend) = build_chart_data(&self.records);
+        self.stats_wpm_data         = wpm;
+        self.stats_acc_scaled       = acc;
+        self.stats_y_max            = ymax;
+        self.trend_record_indices   = trend;
+        self.stat_sections          = build_stat_sections(&self.records);
+        self.stats_content_lines    = sections_total_lines(&self.stat_sections);
+        self.detail_cache           = None;
+
+        let vis        = self.visible_rows().max(1);
+        let max_offset = self.records.len().saturating_sub(vis);
+        self.scroll_offset = self.scroll_offset.min(max_offset);
+    }
 }
 
 pub fn run(theme: Theme) -> Result<()> {
@@ -306,7 +345,9 @@ fn run_loop(
                         KeyCode::Char('q')
                         | KeyCode::Char('\x1b')
                         | KeyCode::Esc => {
-                            if canvas.view == View::Help {
+                            if canvas.pending_delete {
+                                canvas.pending_delete = false;
+                            } else if canvas.view == View::Help {
                                 canvas.close_help();
                             } else if canvas.view == View::Detail {
                                 canvas.close_detail();
@@ -319,11 +360,22 @@ fn run_loop(
                         {
                             canvas.quit()
                         }
+                        KeyCode::Char('y') if canvas.pending_delete => {
+                            canvas.pending_delete = false;
+                            canvas.confirm_delete();
+                        }
+                        _ if canvas.pending_delete => {
+                            canvas.pending_delete = false;
+                        }
                         KeyCode::Tab
                         | KeyCode::Char('1')
                         | KeyCode::Char('2') => canvas.switch_view(),
                         KeyCode::Enter if canvas.view == View::History => canvas.open_detail(),
                         KeyCode::Char('?') if canvas.view == View::History => canvas.open_help(),
+                        KeyCode::Char('d') if canvas.view == View::History => {
+                            canvas.pending_g      = false;
+                            canvas.pending_delete = true;
+                        }
                         KeyCode::Down | KeyCode::Char('j') => match canvas.view {
                             View::History => canvas.move_down(),
                             View::Stats   => canvas.stats_scroll_down(),

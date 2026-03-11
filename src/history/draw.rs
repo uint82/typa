@@ -81,7 +81,7 @@ pub(crate) fn draw(f: &mut Frame, canvas: &Canvas) {
         }
     }
 
-    draw_footer(f, footer_area, &canvas.view, &p);
+    draw_footer(f, footer_area, &canvas.view, canvas.pending_delete, &p);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
@@ -128,11 +128,27 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-fn draw_footer(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
+fn draw_footer(f: &mut Frame, area: Rect, view: &View, pending_delete: bool, p: &Palette) {
     let key = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
     let lbl = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
     let sep = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
     let dot = Span::styled("  •  ", sep);
+
+    if pending_delete {
+        let warn = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
+        let spans = vec![
+            Span::styled("delete this record? ", lbl),
+            Span::styled("y", warn),
+            Span::styled(" confirm  ", lbl),
+            Span::styled("any other key", warn),
+            Span::styled(" cancel", lbl),
+        ];
+        f.render_widget(
+            Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
+            area,
+        );
+        return;
+    }
 
     let mut spans = vec![
         Span::styled("tab",   key), Span::styled(" switch", lbl), dot.clone(),
@@ -143,8 +159,8 @@ fn draw_footer(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
 
     if matches!(view, View::History | View::Help) {
         spans.push(dot.clone());
-        spans.push(Span::styled("?",    key));
-        spans.push(Span::styled(" help", lbl));
+        spans.push(Span::styled("?",     key));
+        spans.push(Span::styled(" help",  lbl));
     }
 
     f.render_widget(
@@ -554,6 +570,7 @@ fn draw_help_modal(f: &mut Frame, area: Rect, p: &Palette) {
     let act_title = "actions";
     let act_rows = [
         ("enter",   "open detail"),
+        ("d",       "delete record"),
         ("tab",     "switch view"),
         ("?",       "toggle help"),
         ("q / esc", "quit / close"),
