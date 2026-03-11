@@ -436,17 +436,18 @@ fn draw_trend_chart(
         Incomplete,
     }
 
-    let highlight_state = match canvas.records.get(canvas.selected) {
-        Option::None => HighlightState::Incomplete,
-        Some(rec) if !rec.completed => HighlightState::Incomplete,
-        Some(_) => {
-            // wpm can be None even on a completed test. treat as incomplete for display purposes.
-            record_indices.iter().enumerate()
-                .find(|&(_, &ri)| ri == canvas.selected)
-                .and_then(|(i, &ri)| {
-                    canvas.records[ri].wpm.map(|w| vec![(i as f64 + 1.0, w)])
-                })
-            .map_or(HighlightState::Incomplete, HighlightState::InWindow)
+    let highlight_state = {
+        let real_idx_opt = canvas.history_indices.get(canvas.selected).copied();
+        match real_idx_opt {
+            None => HighlightState::Incomplete,
+            Some(real_idx) => {
+                record_indices.iter().enumerate()
+                    .find(|&(_, &ri)| ri == real_idx)
+                    .and_then(|(i, &ri)| {
+                        canvas.records[ri].wpm.map(|w| vec![(i as f64 + 1.0, w)])
+                    })
+                    .map_or(HighlightState::Incomplete, HighlightState::InWindow)
+            }
         }
     };
 
@@ -763,20 +764,21 @@ fn draw_table_rows(
     // set here so Canvas::visible_rows() can read it back. the only source of truth.
     canvas.rendered_rows.set(visible);
 
-    for (display_idx, (record_idx, record)) in canvas
-        .records.iter().enumerate()
+    for (display_idx, (history_pos, &real_idx)) in canvas
+        .history_indices.iter().enumerate()
         .skip(canvas.scroll_offset)
         .take(visible)
         .enumerate()
     {
         let row_y    = rows_area.y + display_idx as u16;
         let row_area = Rect::new(rows_area.x, row_y, rows_area.width, 1);
-        let is_sel   = record_idx == canvas.selected;
+        let is_sel   = history_pos == canvas.selected;
         let cursor   = if is_sel { ">" } else { " " };
         let fg       = if is_sel { p.main } else { p.sub };
 
-        let (date, _) = &canvas.record_dates[record_idx];
-        let row = &canvas.row_cache[record_idx];
+        let record    = &canvas.records[real_idx];
+        let (date, _) = &canvas.record_dates[real_idx];
+        let row = &canvas.row_cache[history_pos];
 
         let mut spans = vec![Span::styled(
             // test_num lives in RowCache so we never format it twice. don't move this.

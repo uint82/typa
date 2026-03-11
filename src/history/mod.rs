@@ -35,6 +35,7 @@ pub(crate) enum View {
 
 pub(crate) struct Canvas {
     pub(crate) records: Vec<TestRecord>,
+    pub(crate) history_indices: Vec<usize>,
     pub(crate) selected: usize,
     pub(crate) scroll_offset: usize,
     should_quit: bool,
@@ -76,8 +77,16 @@ impl Canvas {
             .collect();
         let (stats_wpm_data, stats_acc_scaled, stats_y_max,
              trend_record_indices) = build_chart_data(&records);
-        let row_cache        = build_row_cache(&records);
-        let col_width_cache  = build_col_width_cache(&records);
+
+        let history_indices: Vec<usize> = records.iter().enumerate()
+            .filter(|(_, r)| r.completed)
+            .map(|(i, _)| i)
+            .collect();
+        let completed: Vec<TestRecord> = history_indices.iter()
+            .map(|&i| records[i].clone())
+            .collect();
+        let row_cache       = build_row_cache(&completed);
+        let col_width_cache = build_col_width_cache(&completed);
         // zero width so resize() is forced to compute real columns before the first draw.
         let cols   = compute_columns(0, &col_width_cache);
         let cols_w = 0usize;
@@ -90,6 +99,7 @@ impl Canvas {
 
         Ok(Self {
             records,
+            history_indices,
             selected: 0,
             scroll_offset: 0,
             should_quit: false,
@@ -130,7 +140,7 @@ impl Canvas {
         // re-clamp after resize so: (a) selected is always in the visible window,
         // (b) scroll_offset never leaves blank rows at the bottom.
         let vis   = self.visible_rows().max(1);
-        let total = self.records.len();
+        let total = self.history_indices.len();
 
         let max_offset = total.saturating_sub(vis);
         self.scroll_offset = self.scroll_offset.min(max_offset);
@@ -153,9 +163,10 @@ impl Canvas {
     }
 
     fn open_detail(&mut self) {
-        if !self.records.is_empty() {
+        if !self.history_indices.is_empty() {
+            let real_idx = self.history_indices[self.selected];
             self.detail_cache = Some(build_detail_cache(
-                &self.records, &self.record_dates, self.selected,
+                &self.records, &self.record_dates, real_idx,
             ));
             self.view = View::Detail;
         }
@@ -191,7 +202,7 @@ impl Canvas {
     }
 
     fn move_down(&mut self) {
-        if self.selected + 1 < self.records.len() {
+        if self.selected + 1 < self.history_indices.len() {
             self.selected += 1;
             let vis = self.visible_rows().max(1);
             if self.selected >= self.scroll_offset + vis {
@@ -227,7 +238,7 @@ impl Canvas {
     }
 
     fn jump_to_bottom(&mut self) {
-        let last = self.records.len().saturating_sub(1);
+        let last = self.history_indices.len().saturating_sub(1);
         self.selected = last;
         let vis = self.visible_rows().max(1);
         self.scroll_offset = last.saturating_sub(vis - 1);
@@ -236,7 +247,7 @@ impl Canvas {
     fn half_page_down(&mut self) {
         let vis  = self.visible_rows().max(2);
         let half = vis / 2;
-        let last = self.records.len().saturating_sub(1);
+        let last = self.history_indices.len().saturating_sub(1);
         self.selected = (self.selected + half).min(last);
         let ideal_offset = self.selected.saturating_sub(vis / 2);
         let max_offset   = last.saturating_sub(vis - 1);
@@ -264,24 +275,32 @@ impl Canvas {
     }
 
     fn confirm_delete(&mut self) {
-        let idx   = self.selected;
-        let total = self.records.len();
+        let real_idx = self.history_indices[self.selected];
 
-        if let Err(e) = delete_record(idx, total) {
+        if let Err(e) = delete_record(real_idx, self.records.len()) {
             let _ = e;
             return;
         }
 
-        self.records.remove(idx);
+        self.records.remove(real_idx);
 
-        if !self.records.is_empty() {
-            self.selected = self.selected.min(self.records.len() - 1);
+        self.history_indices = self.records.iter().enumerate()
+            .filter(|(_, r)| r.completed)
+            .map(|(i, _)| i)
+            .collect();
+
+        if !self.history_indices.is_empty() {
+            self.selected = self.selected.min(self.history_indices.len() - 1);
         } else {
             self.selected = 0;
         }
 
-        self.row_cache          = build_row_cache(&self.records);
-        self.col_width_cache    = build_col_width_cache(&self.records);
+        let completed: Vec<TestRecord> = self.history_indices.iter()
+            .map(|&i| self.records[i].clone())
+            .collect();
+
+        self.row_cache          = build_row_cache(&completed);
+        self.col_width_cache    = build_col_width_cache(&completed);
         self.cols               = compute_columns(self.cols_w, &self.col_width_cache);
         self.record_dates       = self.records.iter()
             .map(|r| local_datetime(&r.timestamp))
@@ -296,7 +315,7 @@ impl Canvas {
         self.detail_cache           = None;
 
         let vis        = self.visible_rows().max(1);
-        let max_offset = self.records.len().saturating_sub(vis);
+        let max_offset = self.history_indices.len().saturating_sub(vis);
         self.scroll_offset = self.scroll_offset.min(max_offset);
     }
 }
@@ -304,7 +323,7 @@ impl Canvas {
 pub fn run(theme: Theme) -> Result<()> {
     let mut canvas = Canvas::new(theme)?;
 
-    if canvas.records.is_empty() {
+    if canvas.records.is_empty() || canvas.history_indices.is_empty() {
         println!("\n  No history yet. Complete a test to start tracking your progress.\n");
         return Ok(());
     }
