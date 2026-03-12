@@ -283,6 +283,7 @@ impl App {
 
     pub fn check_time(&mut self) {
         if self.test.state != AppState::Running { return; }
+        self.record_snapshot_if_needed();
         if let Some(start) = self.test.start_time {
             let elapsed = start.elapsed().as_secs_f64();
             if let Mode::Time(limit) = self.config.mode {
