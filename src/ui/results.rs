@@ -637,10 +637,19 @@ fn draw_chart(
             .data(&scaled_errors),
     ];
 
-    let max_time_int = max_time.floor() as usize;
-    let x_labels: Vec<Span> = (1..=max_time_int)
-        .map(|t| {
-            Span::styled(format!("{}", t), Style::default().fg(sub_color))
+    let chart_width = body_area.width.max(4) as f64;
+    let max_labels = ((chart_width / 4.0).floor() as usize).clamp(2, 12);
+
+    let raw_step = (max_time - 1.0) / (max_labels - 1) as f64;
+    let candidates = [1.0_f64, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0];
+    let nice_step: f64 = *candidates.iter().find(|&&s| s >= raw_step).unwrap_or(&600.0);
+
+    let n = (((max_time - 1.0) / nice_step).floor() as usize + 1).clamp(2, max_labels);
+
+    let x_labels: Vec<Span> = (0..n)
+        .map(|i| {
+            let t = 1.0 + (max_time - 1.0) * i as f64 / (n - 1) as f64;
+            Span::styled(format!("{:.0}", t), Style::default().fg(sub_color))
         })
         .collect();
 
