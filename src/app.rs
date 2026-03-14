@@ -92,6 +92,9 @@ pub struct TestState {
     pub errors_history: Vec<(f64, f64)>,
     pub(crate) last_snapshot_second: u64,
     pub(crate) prev_incorrect_keystrokes: usize,
+    pub(crate) prev_gross_char_count: usize,
+
+    pub burst_wpm_history: Vec<f64>,
 }
 
 impl Default for TestState {
@@ -142,6 +145,8 @@ impl Default for TestState {
             errors_history: Vec::new(),
             last_snapshot_second: u64::MAX,
             prev_incorrect_keystrokes: 0,
+            prev_gross_char_count: 0,
+            burst_wpm_history: Vec::new(),
         }
     }
 }
@@ -352,6 +357,12 @@ impl App {
         let errors_this_second = self.test.live_incorrect_keystrokes
             .saturating_sub(self.test.prev_incorrect_keystrokes) as f64;
         self.test.prev_incorrect_keystrokes = self.test.live_incorrect_keystrokes;
+
+        let burst_chars = self.test.gross_char_count
+            .saturating_sub(self.test.prev_gross_char_count);
+        self.test.prev_gross_char_count = self.test.gross_char_count;
+        let burst_wpm = (burst_chars as f64 / 5.0) * 60.0;
+        self.test.burst_wpm_history.push(burst_wpm);
 
         self.test.wpm_history.push((elapsed_secs, net_wpm));
         self.test.raw_wpm_history.push((elapsed_secs, raw_wpm));
@@ -645,13 +656,18 @@ impl App {
     }
 
     fn calculate_consistency(&self) -> f64 {
-        let wpms: Vec<f64> = self.test.wpm_history.iter().map(|(_, w)| *w).collect();
+        let wpms: Vec<f64> = self.test.burst_wpm_history.iter()
+            .copied()
+            .filter(|&w| w > 0.0)
+            .collect();
         let n = wpms.len();
         if n < 2 { return 100.0; }
-        let mean     = wpms.iter().sum::<f64>() / n as f64;
+        let mean = wpms.iter().sum::<f64>() / n as f64;
+        if mean == 0.0 { return 100.0; }
         let variance = wpms.iter().map(|w| (w - mean).powi(2)).sum::<f64>() / n as f64;
-        let std_dev  = variance.sqrt();
-        (100.0 - std_dev).clamp(0.0, 100.0)
+        let std_dev = variance.sqrt();
+        let cv = std_dev / mean;
+        (1.0 - cv).clamp(0.0, 1.0) * 100.0
     }
 
     fn on_word_finished(&mut self) {
