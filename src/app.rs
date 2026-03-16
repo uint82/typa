@@ -415,7 +415,18 @@ impl App {
 
             if c != ' ' {
                 let is_extra = user_char_count >= target_char_count;
-                if self.will_cause_visual_wrap(c, is_extra) { return; }
+                if self.will_cause_visual_wrap(c, is_extra) { return; }  // ← was here before, got lost
+
+                let is_finite_mode = matches!(self.config.mode, Mode::Words(_) | Mode::Quote(_));
+                if is_finite_mode {
+                    let last_word_idx = self.test.word_stream_string
+                        .split(' ')
+                        .count()
+                        .saturating_sub(1);
+                    if word_idx >= last_word_idx && user_char_count >= target_char_count {
+                        return;
+                    }
+                }
             }
         }
 
