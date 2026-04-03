@@ -72,7 +72,7 @@ typa --help
 ### Command-Line Options
 
 ```
-typa 0.1.0
+typa 0.4.0
 
 A rusty terminal typing test
 
@@ -85,10 +85,12 @@ Options:
   -l, --language <LANGUAGE>  Language: Filename to use (e.g. "english", "indonesian") [default: english]
 
 Flags:
-  -n, --numbers      Include numbers in the test
-  -p, --punctuation  Include punctuation in the test
-  -h, --help         Print help
-  -V, --version      Print version
+  -n, --numbers        Include numbers in the test
+  -p, --punctuation    Include punctuation in the test
+      --stats          Show interactive typing stats and history
+      --clear-history  Delete all saved history (will prompt for confirmation)
+  -h, --help           Print help
+  -V, --version        Print version
 ```
 
 ### Examples
