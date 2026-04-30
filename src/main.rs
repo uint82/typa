@@ -197,9 +197,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     let mut finish_time: Option<Instant> = None;
 
     loop {
-        let was_running = app.test.state == models::AppState::Running;
         app.check_time();
-        if was_running && app.test.state == models::AppState::Finished {
+        if app.test.state == models::AppState::Finished && finish_time.is_none() {
             finish_time = Some(Instant::now());
         }
 
@@ -236,8 +235,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.quit()
                             }
-                            KeyCode::Tab => app.restart_test(),
-                            KeyCode::Char('r') if app.test.state == models::AppState::Finished && !results_locked => app.retry_last_test(),
+                            KeyCode::Tab => { finish_time = None; app.restart_test(); }
+                            KeyCode::Char('r') if app.test.state == models::AppState::Finished && !results_locked => { finish_time = None; app.retry_last_test(); }
                             KeyCode::Char(_) | KeyCode::Backspace if results_locked => { needs_redraw = false; }
                             KeyCode::Char(c) => app.on_key(c),
                             KeyCode::Backspace => app.on_backspace(),
