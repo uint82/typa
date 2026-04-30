@@ -10,7 +10,6 @@ use rust_embed::RustEmbed;
 use std::time::Instant;
 use std::collections::{HashMap, HashSet};
 
-
 #[derive(RustEmbed)]
 #[folder = "resources/"]
 struct Asset;
@@ -159,6 +158,7 @@ pub struct App {
 
     pub config: SessionConfig,
     pub test: TestState,
+    pub discord: Option<crate::discord::DiscordPresence>,
 }
 
 impl App {
@@ -208,9 +208,24 @@ impl App {
             last_test_words: None,
             config,
             test: TestState::default(),
+            discord: None,
         };
 
         app.generate_initial_words();
+
+        let mut dp = crate::discord::DiscordPresence::new();
+        if dp.connected {
+            use crate::ui::utils::quote_idle_label;
+            let ql = match &app.config.mode {
+                Mode::Quote(q) => quote_idle_label(q, app.test.original_quote_length),
+                _ => "",
+            };
+            dp.set_idle(&app.config.mode, app.config.use_punctuation, app.config.use_numbers, ql, &app.config.word_data.name);
+            app.discord = Some(dp);
+        } else {
+            app.discord = None;
+        }
+
         Ok(app)
     }
 
@@ -242,12 +257,19 @@ impl App {
         self.test = TestState::default();
         self.show_ui = true;
         self.generate_initial_words();
+        if let Some(ref mut d) = self.discord {
+            use crate::ui::utils::quote_idle_label;
+            let ql = match &self.config.mode {
+                Mode::Quote(q) => quote_idle_label(q, self.test.original_quote_length),
+                _ => "",
+            };
+            d.set_idle(&self.config.mode, self.config.use_punctuation, self.config.use_numbers, ql, &self.config.word_data.name);
+        }
     }
 
     pub fn retry_last_test(&mut self) {
         let words = match self.last_test_words.clone() {
             Some(w) if !w.is_empty() => w,
-            // if no previous test yet, fall back to a normal restart
             _ => { self.restart_test(); return; }
         };
         if self.test.state == AppState::Running {
@@ -301,7 +323,6 @@ impl App {
         self.test.state = AppState::Finished;
         let duration_secs = self.test.start_time.map(|t| t.elapsed().as_secs_f64()).unwrap_or(1.0);
 
-        // in time mode the timer fires mid-word. untyped chars at the end shouldn't count as missed
         if let Mode::Time(_) = self.config.mode {
             let typed_len = self.test.aligned_input.len();
             if typed_len < self.test.display_string.chars().count() {
@@ -333,7 +354,6 @@ impl App {
         };
         let remaining = duration_secs - last_full_second;
 
-        // skip the final snapshot if it's too close to the last full-second snapshot to avoid a duplicate
         if remaining >= 0.495 {
             self.push_snapshot(duration_secs);
         }
@@ -341,6 +361,32 @@ impl App {
         self.test.final_consistency = self.calculate_consistency();
 
         self.check_personal_best();
+
+        if let Some(ref mut d) = self.discord {
+            let typed_words = self.test.scrolled_word_count
+                + self.test.input.split_whitespace().count();
+            let total_words = match self.config.mode {
+                Mode::Words(w) => w,
+                _ => self.test.total_quote_words.max(self.test.word_stream.len()),
+            };
+            use crate::ui::utils::get_quote_length_category;
+            let ql = get_quote_length_category(self.test.original_quote_length);
+            d.set_result(
+                self.test.final_wpm,
+                self.test.final_accuracy,
+                &self.config.mode,
+                self.test.is_new_best,
+                typed_words,
+                total_words,
+                &self.test.current_quote_source.clone(),
+                self.test.final_consistency,
+                self.config.use_punctuation,
+                self.config.use_numbers,
+                ql,
+                &self.config.word_data.name,
+            );
+        }
+
         if !self.test.cumulative_words.is_empty() {
             self.last_test_words = Some(self.test.cumulative_words.clone());
         }
@@ -373,7 +419,6 @@ impl App {
         if self.test.state != AppState::Running { return; }
         if let Some(start) = self.test.start_time {
             let elapsed_secs = start.elapsed().as_secs_f64();
-            // floor gives clean integer second boundaries instead of rounding artefacts
             let current_second = elapsed_secs.floor() as u64;
 
             if current_second >= 1 &&
@@ -390,6 +435,14 @@ impl App {
         if self.test.state == AppState::Waiting {
             self.test.start_time = Some(Instant::now());
             self.test.state = AppState::Running;
+            if let Some(ref mut d) = self.discord {
+                use crate::ui::utils::quote_idle_label;
+                let ql = match &self.config.mode {
+                    Mode::Quote(q) => quote_idle_label(q, self.test.original_quote_length),
+                    _ => "",
+                };
+                d.set_typing(&self.config.mode, self.config.use_punctuation, self.config.use_numbers, ql, &self.config.word_data.name);
+            }
         }
 
         self.record_snapshot_if_needed();
@@ -397,12 +450,12 @@ impl App {
         let current_input_segments: Vec<&str> = self.test.input.split(' ').collect();
         let word_idx = current_input_segments.len().saturating_sub(1);
 
-        if word_idx < self.test.word_stream.len() {
-            let target_word_struct = &self.test.word_stream[word_idx];
-            let target_word = &target_word_struct.text;
-            let user_current_word = current_input_segments.last().unwrap_or(&"");
+            if word_idx < self.test.word_stream.len() {
+                let target_word_struct = &self.test.word_stream[word_idx];
+                let target_word = &target_word_struct.text;
+                let user_current_word = current_input_segments.last().unwrap_or(&"");
 
-            if c == ' ' && user_current_word.is_empty() { return; }
+                if c == ' ' && user_current_word.is_empty() { return; }
 
             let target_char_count = target_word.chars().count();
             let user_char_count = user_current_word.chars().count();
@@ -415,7 +468,7 @@ impl App {
 
             if c != ' ' {
                 let is_extra = user_char_count >= target_char_count;
-                if self.will_cause_visual_wrap(c, is_extra) { return; }  // ← was here before, got lost
+                if self.will_cause_visual_wrap(c, is_extra) { return; }
 
                 let is_finite_mode = matches!(self.config.mode, Mode::Words(_) | Mode::Quote(_));
                 if is_finite_mode {
@@ -430,7 +483,6 @@ impl App {
             }
         }
 
-        // accuracy must be recorded before mutating input so we capture the actual intent
         self.show_ui = false;
         self.test.gross_char_count += 1;
 
@@ -535,7 +587,7 @@ impl App {
 
         // visual equality so "-" typed against "—" is not counted as an error
         let is_word_error = !Self::words_visually_equal(user_current_word, &target_word);
-        // char counts; byte lengths are wrong for multi-byte chars like "—" (3 bytes, 1 char)
+        // char counts; byte lengths are wrong for multi-byte chars like em dash (3 bytes, 1 char)
         let user_chars   = user_current_word.chars().count();
         let target_chars = target_word.chars().count();
         let extra_len_penalty = user_chars.saturating_sub(target_chars);
@@ -684,7 +736,6 @@ impl App {
     fn on_word_finished(&mut self) {
         let segments: Vec<&str> = self.test.input.split(' ').collect();
         let finished_idx = segments.len().saturating_sub(2);
-
         if finished_idx < self.test.word_stream.len() {
             self.test.word_stream[finished_idx].state = WordState::Typed;
         }
@@ -692,15 +743,12 @@ impl App {
         if next_idx < self.test.word_stream.len() {
             self.test.word_stream[next_idx].state = WordState::Active;
         }
-
         if finished_idx >= self.test.furthest_word_idx {
             self.test.furthest_word_idx = finished_idx + 1;
-
             let pending_count = self.test.word_stream.iter()
                 .skip(next_idx)
                 .filter(|w| w.state == WordState::Pending)
                 .count();
-
             if pending_count < 100 {
                 self.add_one_word();
             }
@@ -806,14 +854,12 @@ impl App {
         self.test.display_mask    = new_mask;
         self.test.aligned_input   = new_aligned;
         self.test.extra_char_count = self.test.display_mask.iter().filter(|&&x| x).count();
-        // cursor_idx mirrors aligned_input length so callers never need to track it manually
         self.test.cursor_idx = self.test.aligned_input.len();
         self.recalculate_lines();
     }
 
     fn will_cause_visual_wrap(&self, extra_char: char, is_extra: bool) -> bool {
         let layout_width = (self.terminal_width as usize * 80) / 100;
-        // extra chars use the full width. no caret buffer needed since they trail behind it
         let candidate_width = if is_extra { layout_width } else { layout_width.saturating_sub(2) };
 
         let current_line_idx = Self::line_idx_for_cursor(
@@ -837,7 +883,7 @@ impl App {
         }
     }
 
-    /// used by both recalculate_lines and will_cause_visual_wrap so they always agree on boundaries
+    // used by both recalculate_lines and will_cause_visual_wrap so they always agree on boundaries
     fn wrap_into_lines(text: &str, width: usize) -> Vec<String> {
         let mut lines: Vec<String> = Vec::new();
         let mut current_line = String::new();
@@ -872,7 +918,7 @@ impl App {
     fn line_idx_for_cursor(lines: &[String], cursor_pos: usize) -> usize {
         let mut running = 0usize;
         for (i, line) in lines.iter().enumerate() {
-            let line_len = line.chars().count() + 1; // +1 accounts for the space that separates lines
+            let line_len = line.chars().count() + 1;
             if cursor_pos < running + line_len { return i; }
             running += line_len;
         }

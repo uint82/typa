@@ -1,6 +1,6 @@
 mod cache;
 mod draw;
-mod stats;
+pub mod stats;
 pub mod history;
 
 pub use history::{clear_history, delete_record, load_history, record_test, TestRecord};

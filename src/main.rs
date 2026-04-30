@@ -5,6 +5,7 @@ mod ui;
 mod history;
 pub mod utils;
 mod generator;
+mod discord;
 
 use anyhow::Result;
 use app::App;
@@ -26,7 +27,6 @@ use std::io;
 #[command(name = "typa")]
 #[command(version)]
 #[command(about = "A rusty terminal typing test", long_about = None)]
-// disable the default flags so we can customize them manually below
 #[command(disable_help_flag = true)]
 #[command(disable_version_flag = true)]
 #[command(help_template = "\
@@ -86,13 +86,11 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // load config early so the history canvas can use the user's theme
     let app_config = AppConfig::load().unwrap_or_else(|e| {
         eprintln!(
             "Warning: Failed to load config, using defaults. Error: {}",
             e
         );
-        // load() handles missing files gracefully — this catches format errors
         AppConfig {
             theme: config::Theme::default(),
         }
@@ -114,6 +112,19 @@ fn main() -> Result<()> {
     }
 
     if cli.stats {
+        let mut dp = crate::discord::DiscordPresence::new();
+        if dp.connected {
+            if let Ok(records) = history::load_history() {
+                use crate::history::stats::compute_streaks;
+                let completed: Vec<_> = records.iter().filter(|r| r.completed).collect();
+                let best_wpm = completed.iter()
+                    .filter_map(|r| r.wpm)
+                    .fold(0.0_f64, f64::max);
+                let total_tests = records.len();
+                let (current_streak, _) = compute_streaks(&records);
+                dp.set_stats(best_wpm, total_tests, current_streak);
+            }
+        }
         history::run(app_config.theme)?;
         return Ok(());
     }
@@ -172,18 +183,45 @@ fn main() -> Result<()> {
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
+    use std::time::Duration;
+
     let size = terminal.size()?;
     app.resize(size.width, size.height);
 
+    const BLINK_PERIOD: Duration = Duration::from_millis(530);
+
+    let mut last_blink_phase = u128::MAX;
+    let mut last_timer_secs = u64::MAX;
+    let mut needs_redraw = true;
+
     loop {
-        terminal.draw(|f| ui::render(f, app))?;
         app.check_time();
 
-        if event::poll(std::time::Duration::from_millis(16))? {
+        let blink_phase = app.test.caret_epoch.elapsed().as_millis() / BLINK_PERIOD.as_millis();
+        if blink_phase != last_blink_phase {
+            last_blink_phase = blink_phase;
+            needs_redraw = true;
+        }
+
+        if let Some(start) = app.test.start_time {
+            let secs = start.elapsed().as_secs();
+            if secs != last_timer_secs {
+                last_timer_secs = secs;
+                needs_redraw = true;
+            }
+        }
+
+        if needs_redraw {
+            terminal.draw(|f| ui::render(f, app))?;
+            needs_redraw = false;
+        }
+
+        if event::poll(Duration::from_millis(100))? {
             let ev = event::read()?;
             match ev {
                 Event::Key(key) => {
                     if key.kind == KeyEventKind::Press {
+                        needs_redraw = true;
                         match key.code {
                             KeyCode::Esc => app.quit(),
                             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -193,15 +231,17 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Char('r') if app.test.state == models::AppState::Finished => app.retry_last_test(),
                             KeyCode::Char(c) => app.on_key(c),
                             KeyCode::Backspace => app.on_backspace(),
-                            _ => {}
+                            _ => { needs_redraw = false; }
                         }
                     }
                 }
                 Event::Mouse(_) => {
                     app.on_mouse();
+                    needs_redraw = true;
                 }
                 Event::Resize(w, h) => {
                     app.resize(w, h);
+                    needs_redraw = true;
                 }
                 _ => {}
             }

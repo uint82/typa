@@ -42,6 +42,20 @@ pub fn get_quote_length_category(char_count: usize) -> &'static str {
     }
 }
 
+pub fn quote_idle_label(selector: &crate::models::QuoteSelector, original_length: usize) -> &'static str {
+    use crate::models::{QuoteSelector, QuoteLength::*};
+    match selector {
+        QuoteSelector::Category(len) => match len {
+            All      => "all",
+            Short    => "short",
+            Medium   => "medium",
+            Long     => "long",
+            VeryLong => "very long",
+        },
+        QuoteSelector::Id(_) => get_quote_length_category(original_length),
+    }
+}
+
 pub fn render_header(f: &mut Frame, app: &App) {
     let mut header_spans = Vec::new();
     // use 'main' for active brand, 'sub' for inactive
