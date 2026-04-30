@@ -183,19 +183,25 @@ fn main() -> Result<()> {
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     let size = terminal.size()?;
     app.resize(size.width, size.height);
 
     const BLINK_PERIOD: Duration = Duration::from_millis(530);
+    const RESULTS_LOCKOUT: Duration = Duration::from_millis(800);
 
     let mut last_blink_phase = u128::MAX;
     let mut last_timer_secs = u64::MAX;
     let mut needs_redraw = true;
+    let mut finish_time: Option<Instant> = None;
 
     loop {
+        let was_running = app.test.state == models::AppState::Running;
         app.check_time();
+        if was_running && app.test.state == models::AppState::Finished {
+            finish_time = Some(Instant::now());
+        }
 
         let blink_phase = app.test.caret_epoch.elapsed().as_millis() / BLINK_PERIOD.as_millis();
         if blink_phase != last_blink_phase {
@@ -221,12 +227,16 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             match ev {
                 Event::Key(key) => {
                     if key.kind == KeyEventKind::Press {
+                        let results_locked = app.test.state == models::AppState::Finished
+                            && finish_time.map_or(true, |t| t.elapsed() < RESULTS_LOCKOUT);
+
                         needs_redraw = true;
                         match key.code {
                             KeyCode::Esc => app.quit(),
                             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.quit()
                             }
+                            _ if results_locked => { needs_redraw = false; }
                             KeyCode::Tab => app.restart_test(),
                             KeyCode::Char('r') if app.test.state == models::AppState::Finished => app.retry_last_test(),
                             KeyCode::Char(c) => app.on_key(c),
