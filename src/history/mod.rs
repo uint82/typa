@@ -51,7 +51,6 @@ pub(crate) struct Canvas {
     pub(crate) stats_wpm_data:   Vec<(f64, f64)>,
     pub(crate) stats_acc_scaled: Vec<(f64, f64)>,
     pub(crate) stats_y_max:      f64,
-    // index into self.records for each trend point. how we pin the selected record on the chart.
     pub(crate) trend_record_indices: Vec<usize>,
     pub(crate) row_cache: Vec<RowCache>,
     pub(crate) cols:   ColumnLayout,
@@ -391,7 +390,10 @@ fn run_loop(
                         | KeyCode::Char('2') => canvas.switch_view(),
                         KeyCode::Enter if canvas.view == View::History => canvas.open_detail(),
                         KeyCode::Char('?') if canvas.view == View::History => canvas.open_help(),
-                        KeyCode::Char('d') if canvas.view == View::History => {
+                        KeyCode::Char('d')
+                            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                            && canvas.view == View::History =>
+                        {
                             canvas.pending_g      = false;
                             canvas.pending_delete = true;
                         }
