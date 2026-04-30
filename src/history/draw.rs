@@ -129,20 +129,37 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, view: &View, p: &Palette) {
 }
 
 fn draw_footer(f: &mut Frame, area: Rect, view: &View, pending_delete: bool, p: &Palette) {
-    let key = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
-    let lbl = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
-    let sep = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
-    let dot = Span::styled("  •  ", sep);
+    let key  = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
+    let lbl  = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
+    let sep  = Style::default().fg(p.sub).add_modifier(Modifier::DIM);
+    let dot  = Span::styled("  •  ", sep);
+    let w    = area.width as usize;
 
     if pending_delete {
         let warn = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
-        let spans = vec![
-            Span::styled("delete this record? ", lbl),
-            Span::styled("y", warn),
-            Span::styled(" confirm  ", lbl),
-            Span::styled("any other key", warn),
-            Span::styled(" cancel", lbl),
-        ];
+        let spans = if w >= 51 {
+            vec![
+                Span::styled("delete this record? ", lbl),
+                Span::styled("y", warn),
+                Span::styled(" confirm  ", lbl),
+                Span::styled("any other key", warn),
+                Span::styled(" cancel", lbl),
+            ]
+        } else if w >= 23 {
+            vec![
+                Span::styled("y", warn),
+                Span::styled(" confirm  ", lbl),
+                Span::styled("other", warn),
+                Span::styled(" cancel", lbl),
+            ]
+        } else {
+            vec![
+                Span::styled("y", warn),
+                Span::styled(" yes  ", lbl),
+                Span::styled("other", warn),
+                Span::styled(" no", lbl),
+            ]
+        };
         f.render_widget(
             Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
             area,
@@ -150,18 +167,36 @@ fn draw_footer(f: &mut Frame, area: Rect, view: &View, pending_delete: bool, p: 
         return;
     }
 
-    let mut spans = vec![
-        Span::styled("tab",   key), Span::styled(" switch", lbl), dot.clone(),
-        Span::styled("enter", key), Span::styled(" open",   lbl), dot.clone(),
-        Span::styled("jk/↑↓", key), Span::styled(" move",   lbl), dot.clone(),
-        Span::styled("q",     key), Span::styled(" quit",   lbl),
-    ];
+    let has_help = matches!(view, View::History | View::Help);
 
-    if matches!(view, View::History | View::Help) {
-        spans.push(dot.clone());
-        spans.push(Span::styled("?",     key));
-        spans.push(Span::styled(" help",  lbl));
-    }
+    let spans = if w >= (if has_help { 62 } else { 51 }) {
+        let mut s = vec![
+            Span::styled("tab",   key), Span::styled(" switch", lbl), dot.clone(),
+            Span::styled("enter", key), Span::styled(" open",   lbl), dot.clone(),
+            Span::styled("jk/↑↓", key), Span::styled(" move",  lbl), dot.clone(),
+            Span::styled("q",     key), Span::styled(" quit",   lbl),
+        ];
+        if has_help { s.extend([dot.clone(), Span::styled("?", key), Span::styled(" help", lbl)]); }
+        s
+    } else if w >= (if has_help { 35 } else { 29 }) {
+        let mut s = vec![
+            Span::styled("tab",   key), dot.clone(),
+            Span::styled("enter", key), dot.clone(),
+            Span::styled("jk/↑↓", key), dot.clone(),
+            Span::styled("q",     key),
+        ];
+        if has_help { s.extend([dot.clone(), Span::styled("?", key)]); }
+        s
+    } else {
+        let mut s = vec![
+            Span::styled("tab",   key), Span::styled("  ", lbl),
+            Span::styled("enter", key), Span::styled("  ", lbl),
+            Span::styled("jk",    key), Span::styled("  ", lbl),
+            Span::styled("q",     key),
+        ];
+        if has_help { s.extend([Span::styled("  ", lbl), Span::styled("?", key)]); }
+        s
+    };
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).alignment(Alignment::Center),

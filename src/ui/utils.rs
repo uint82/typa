@@ -96,11 +96,28 @@ pub fn render_header(f: &mut Frame, app: &App) {
 pub fn render_footer(f: &mut Frame, app: &App) {
     if app.show_ui {
         use crate::models::AppState;
+        let width = f.area().width as usize;
+
         let text = if app.test.state == AppState::Finished {
-            "tab: next test  |  r: retry same words  |  esc: quit"
+            if width >= 52 {
+                "tab: next test  |  r: retry same words  |  esc: quit"
+            } else if width >= 36 {
+                "tab: next  |  r: retry  |  esc: quit"
+            } else if width >= 24 {
+                "tab  |  r: retry  |  esc"
+            } else {
+                "tab  |  r  |  esc"
+            }
         } else {
-            "tab: restart  |  esc: quit"
+            if width >= 28 {
+                "tab: restart  |  esc: quit"
+            } else if width >= 18 {
+                "tab: restart  |  esc"
+            } else {
+                "tab  esc"
+            }
         };
+
         let footer = Paragraph::new(text)
             .style(Style::default().fg(hex_to_rgb(&app.config.theme.sub)))
             .alignment(Alignment::Center);
