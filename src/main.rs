@@ -236,9 +236,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.quit()
                             }
-                            _ if results_locked => { needs_redraw = false; }
                             KeyCode::Tab => app.restart_test(),
-                            KeyCode::Char('r') if app.test.state == models::AppState::Finished => app.retry_last_test(),
+                            KeyCode::Char('r') if app.test.state == models::AppState::Finished && !results_locked => app.retry_last_test(),
+                            KeyCode::Char(_) | KeyCode::Backspace if results_locked => { needs_redraw = false; }
                             KeyCode::Char(c) => app.on_key(c),
                             KeyCode::Backspace => app.on_backspace(),
                             _ => { needs_redraw = false; }
